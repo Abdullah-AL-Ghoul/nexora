@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# prisma generated client
+/lib/generated/
+
 # production
 /build
 
@@ -44,3 +47,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/lib/generated/prisma
