@@ -12,6 +12,7 @@ import { requireRole, type AppRole } from "@/lib/auth/guards";
 const navItems: { href: string; label: string; roles: AppRole[] }[] = [
   { href: "/admin", label: "Dashboard", roles: ["ADMIN", "MANAGER"] },
   { href: "/admin/orders", label: "Orders", roles: ["ADMIN", "MANAGER"] },
+  { href: "/admin/products", label: "Products", roles: ["ADMIN", "MANAGER"] },
   { href: "/admin/users", label: "Users", roles: ["ADMIN"] },
 ];
 

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { STAFF_ROLES, requireRole } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +47,14 @@ export default async function AdminOrdersPage() {
           <tbody>
             {orders.map((order) => (
               <tr key={order.id} className="border-b border-border last:border-b-0">
-                <td className="px-4 py-3 font-medium text-foreground">{order.orderNumber}</td>
+                <td className="px-4 py-3 font-medium text-foreground">
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {order.orderNumber}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">{order.user.name ?? order.user.email}</td>
                 <td className="px-4 py-3 text-muted-foreground">{order._count.items}</td>
                 <td className="px-4 py-3 text-foreground">${(order.total / 100).toFixed(2)}</td>

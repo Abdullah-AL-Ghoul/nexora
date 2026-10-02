@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@/lib/db";
 
@@ -9,11 +10,34 @@ import { prisma } from "@/lib/db";
  * - `role` is an additional field backed by the Prisma `Role` enum.
  *   `input: false` prevents clients from self-assigning roles at signup —
  *   roles are granted server-side only.
+ * - Disabled accounts (`isActive = false`, set from /admin/users) are
+ *   rejected at sign-in.
  * - Dev mode: reset/verification emails are logged to the server console
  *   (no email provider in the local environment).
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/email") return;
+      const email =
+        typeof (ctx.body as { email?: unknown } | undefined)?.email === "string"
+          ? ((ctx.body as { email: string }).email)
+          : null;
+      if (!email) return;
+
+      const user = (await ctx.context.adapter.findOne({
+        model: "user",
+        where: [{ field: "email", value: email }],
+      })) as { isActive?: boolean } | null;
+
+      if (user && user.isActive === false) {
+        throw new APIError("FORBIDDEN", {
+          message: "This account has been disabled.",
+        });
+      }
+    }),
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
@@ -38,6 +62,15 @@ export const auth = betterAuth({
         type: "string",
         required: false,
         input: true,
+      },
+      // Must be registered here: better-auth's adapter only selects fields
+      // known to its schema, and the sign-in hook below needs to read it.
+      // `input: false` — only /admin/users may flip this flag.
+      isActive: {
+        type: "boolean",
+        defaultValue: true,
+        required: false,
+        input: false,
       },
     },
   },
