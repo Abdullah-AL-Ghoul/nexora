@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { hashPassword } from "better-auth/crypto";
 import { prisma } from "../lib/db";
 
 /**
@@ -8,10 +9,13 @@ import { prisma } from "../lib/db";
  * - demo users live on the `nexora.demo` domain
  * - demo SKUs are prefixed with `DEMO-`
  * - demo order numbers are prefixed with `NX-DEMO-`
+ * - all demo users share the same demo password (see DEMO_PASSWORD)
  *
  * The script is destructive: it wipes the local database before inserting.
  * Never run it against a production database.
  */
+
+const DEMO_PASSWORD = "NexoraDemo!2026";
 
 const IMG = (slug: string, i: number) => `https://picsum.photos/seed/nexora-${slug}-${i}/800/800`;
 
@@ -211,9 +215,24 @@ async function main(): Promise<void> {
   const users: Record<string, string> = {};
   for (const seed of DEMO_USERS) {
     const user = await prisma.user.create({
-      data: { id: seed.id, email: seed.email, name: seed.name, role: seed.role, emailVerified: daysAgo(45) },
+      data: { id: seed.id, email: seed.email, name: seed.name, role: seed.role, emailVerified: true },
     });
     users[seed.email] = user.id;
+  }
+
+  // Credential accounts so demo users can sign in with email/password (better-auth).
+  // NOTE: accountId must equal the user id (better-auth sign-in lookup rule).
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  for (const seed of DEMO_USERS) {
+    await prisma.account.create({
+      data: {
+        id: `demo_account_${seed.id}`,
+        userId: users[seed.email],
+        providerId: "credential",
+        accountId: users[seed.email],
+        password: passwordHash,
+      },
+    });
   }
 
   const sold = soldByProduct(users);
@@ -319,6 +338,7 @@ async function main(): Promise<void> {
     `Seeded: ${CATEGORIES.length} categories, ${productCount} products, ${DEMO_USERS.length} demo users, ` +
       `${COUPONS.length} coupons, ${orderCount} orders, ${reviewCount} reviews, ${inventoryCount} inventory records.`,
   );
+  console.log(`Demo sign-in: admin@nexora.demo | manager@nexora.demo | customer@nexora.demo — password: ${DEMO_PASSWORD}`);
 }
 
 async function seedOrders(users: Record<string, string>, initialStock: Map<string, number>): Promise<void> {

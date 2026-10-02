@@ -59,7 +59,7 @@ enum InventoryReason {
 model User {
   id            String    @id
   email         String    @unique
-  emailVerified DateTime?
+  emailVerified Boolean  @default(false)
   name          String?
   image         String?
   phone         String?
