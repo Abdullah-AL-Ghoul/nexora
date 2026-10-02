@@ -290,6 +290,7 @@ model Order {
   address        Json
   couponCode     String?
   notes          String?
+  idempotencyKey String?       @unique
   placedAt       DateTime      @default(now())
   paidAt         DateTime?
   shippedAt      DateTime?
@@ -370,6 +371,7 @@ model Coupon {
   startsAt          DateTime
   endsAt            DateTime
   usageLimit        Int?
+  perUserLimit      Int?
   usedCount         Int        @default(0)
   active            Boolean    @default(true)
   createdAt         DateTime   @default(now())

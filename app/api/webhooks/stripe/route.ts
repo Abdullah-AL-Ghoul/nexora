@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
-import { markOrderPaid } from "@/lib/checkout/orders";
+import { cancelPendingOrder, markOrderPaid, refundOrder } from "@/lib/checkout/orders";
 import { prisma } from "@/lib/db";
 import { getServerEnv } from "@/lib/env";
 
@@ -20,6 +20,49 @@ type StripeEvent = {
   type: string;
   data?: { object?: Record<string, unknown> };
 };
+
+/** Extracts a `pi_...` id from a webhook object field (string or object). */
+function paymentIntentIdOf(value: unknown): string | null {
+  if (typeof value === "string" && value.startsWith("pi_")) return value;
+  if (typeof value === "object" && value !== null && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === "string" && id.startsWith("pi_")) return id;
+  }
+  return null;
+}
+
+function orderIdOf(object: Record<string, unknown>): string | null {
+  const metadata = object.metadata as Record<string, unknown> | undefined;
+  const fromMetadata = metadata?.orderId;
+  if (typeof fromMetadata === "string" && fromMetadata) return fromMetadata;
+  const fromReference = object.client_reference_id;
+  if (typeof fromReference === "string" && fromReference) return fromReference;
+  return null;
+}
+
+/**
+ * Best-effort refund when fulfillment failed after money was captured
+ * (e.g. stock ran out between checkout and the webhook). Never throws.
+ */
+async function refundCapturedPayment(orderId: string): Promise<void> {
+  try {
+    const env = getServerEnv();
+    const payment = await prisma.payment.findUnique({
+      where: { orderId },
+      select: { stripePaymentIntentId: true, status: true },
+    });
+    if (!payment?.stripePaymentIntentId || !env.STRIPE_SECRET_KEY) return;
+
+    const { default: Stripe } = await import("stripe");
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+    await stripe.refunds.create({
+      payment_intent: payment.stripePaymentIntentId,
+    });
+    console.error(`order ${orderId}: fulfillment failed — refund issued automatically`);
+  } catch (error) {
+    console.error(`order ${orderId}: AUTOMATIC REFUND FAILED — manual action required`, error);
+  }
+}
 
 function verifySignature(payload: string, header: string, secret: string): boolean {
   const parts = new Map<string, string[]>();
@@ -100,16 +143,35 @@ export async function POST(request: Request) {
     const object = event.data?.object ?? {};
 
     if (event.type === "checkout.session.completed" || event.type === "payment_intent.succeeded") {
-      const metadata = object.metadata as Record<string, unknown> | undefined;
-      const orderId = metadata?.orderId;
-      if (typeof orderId === "string" && orderId) {
-        await markOrderPaid(orderId);
+      const orderId = orderIdOf(object);
+      if (orderId) {
+        const result = await markOrderPaid(orderId);
+        if (result.reason === "INSUFFICIENT_STOCK") {
+          // Money captured but stock is gone — refund the customer.
+          await refundCapturedPayment(orderId);
+        }
+      }
+    } else if (event.type === "checkout.session.expired") {
+      const orderId = orderIdOf(object);
+      if (orderId) {
+        await cancelPendingOrder(orderId);
+      }
+    } else if (event.type === "charge.refunded") {
+      const paymentIntentId = paymentIntentIdOf(object.payment_intent);
+      if (paymentIntentId) {
+        const payment = await prisma.payment.findUnique({
+          where: { stripePaymentIntentId: paymentIntentId },
+          select: { orderId: true },
+        });
+        if (payment) {
+          await refundOrder(payment.orderId);
+        }
       }
     } else if (event.type === "payment_intent.payment_failed") {
       const paymentIntentId = object.id;
       if (typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_")) {
         await prisma.payment.updateMany({
-          where: { stripePaymentIntentId: paymentIntentId },
+          where: { stripePaymentIntentId: paymentIntentId, status: "PENDING" },
           data: { status: "FAILED" },
         });
       }

@@ -59,6 +59,17 @@ type ReviewState = {
   coupon: CouponResult | null;
 };
 
+/**
+ * One key per submit attempt: a double-click retries the same order instead
+ * of creating a duplicate; a fresh attempt gets a fresh key.
+ */
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
+
 export function CheckoutForm({ userName }: { userName: string }) {
   const router = useRouter();
   const items = useCartStore((state) => state.items);
@@ -171,6 +182,7 @@ export function CheckoutForm({ userName }: { userName: string }) {
           address,
           couponCode: couponCode ?? null,
           notes: notes?.trim() ? notes : null,
+          idempotencyKey: newIdempotencyKey(),
         }),
       });
       const data = (await response.json()) as {

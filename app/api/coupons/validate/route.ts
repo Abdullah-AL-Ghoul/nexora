@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getSession } from "@/lib/auth/guards";
 import { checkCoupon, quoteCartItems } from "@/lib/cart/quote";
 import { computeDiscount } from "@/lib/cart/pricing";
 import { couponValidateSchema } from "@/lib/validators/cart";
@@ -27,12 +28,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    const session = await getSession();
     const quote = await quoteCartItems(parsed.data.items);
     if (quote.lines.length === 0) {
       return NextResponse.json({ error: "No valid items to apply the coupon to." }, { status: 400 });
     }
 
-    const check = await checkCoupon(parsed.data.code, quote.subtotal);
+    const check = await checkCoupon(parsed.data.code, quote.subtotal, session?.user.id);
     if (!check.ok) {
       return NextResponse.json({ error: check.message }, { status: 400 });
     }

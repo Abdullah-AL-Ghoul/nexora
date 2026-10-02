@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { getSession } from "@/lib/auth/guards";
-import { createOrder } from "@/lib/checkout/orders";
+import { cancelPendingOrder, createOrder } from "@/lib/checkout/orders";
 import { getPublicEnv, getServerEnv } from "@/lib/env";
+import { prisma } from "@/lib/db";
 import { checkoutSchema } from "@/lib/validators/checkout";
 
 /**
@@ -55,26 +56,54 @@ export async function POST(request: Request) {
       try {
         const stripe = new Stripe(env.STRIPE_SECRET_KEY);
         const appUrl = getPublicEnv().NEXT_PUBLIC_APP_URL;
-        const checkoutSession = await stripe.checkout.sessions.create({
-          mode: "payment",
-          client_reference_id: order.id,
-          metadata: { orderId: order.id },
-          line_items: order.items.map((item) => ({
-            quantity: item.quantity,
-            price_data: {
-              currency: "usd",
-              unit_amount: item.unitPrice,
-              product_data: { name: item.name },
-            },
-          })),
-          success_url: `${appUrl}/account/orders/${order.id}?placed=1`,
-          cancel_url: `${appUrl}/checkout?cancelled=1`,
-        });
+        // Same key across retries of this attempt — Stripe returns the same
+        // session instead of creating duplicates.
+        const stripeIdempotencyKey = `checkout-${parsed.data.idempotencyKey ?? order.id}`;
+        const checkoutSession = await stripe.checkout.sessions.create(
+          {
+            mode: "payment",
+            client_reference_id: order.id,
+            metadata: { orderId: order.id },
+            line_items: order.items.map((item) => ({
+              quantity: item.quantity,
+              price_data: {
+                currency: "usd",
+                unit_amount: item.unitPrice,
+                product_data: { name: item.name },
+              },
+            })),
+            success_url: `${appUrl}/account/orders/${order.id}?placed=1`,
+            cancel_url: `${appUrl}/checkout?cancelled=1`,
+          },
+          { idempotencyKey: stripeIdempotencyKey }
+        );
+
+        // Link the PaymentIntent so payment_intent.payment_failed /
+        // charge.refunded webhooks can match this order.
+        const paymentIntentId =
+          typeof checkoutSession.payment_intent === "string"
+            ? checkoutSession.payment_intent
+            : (checkoutSession.payment_intent?.id ?? null);
+        if (paymentIntentId) {
+          await prisma.payment
+            .update({
+              where: { orderId: order.id },
+              data: { stripePaymentIntentId: paymentIntentId },
+            })
+            .catch((error) => {
+              console.error("failed to store payment intent id", error);
+            });
+        }
+
         return NextResponse.json(
           { orderId: order.id, orderNumber: order.orderNumber, url: checkoutSession.url },
           { status: 201 }
         );
-      } catch {
+      } catch (error) {
+        // No payment session — cancel the orphan PENDING order so it does
+        // not linger (and does not block this cart's idempotency retry).
+        console.error("stripe checkout session failed", error);
+        await cancelPendingOrder(order.id).catch(() => undefined);
         return NextResponse.json(
           { error: "Unable to start payment. Try again." },
           { status: 502 }

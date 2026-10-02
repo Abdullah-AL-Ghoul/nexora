@@ -28,6 +28,11 @@ export const checkoutSchema = z
     address: addressSchema,
     couponCode: couponCodeSchema.nullish(),
     notes: z.string().trim().max(500).nullish(),
+    // Client-generated per submit attempt — server dedupes duplicate orders.
+    idempotencyKey: z
+      .string()
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+      .nullish(),
   })
   .strict();
 

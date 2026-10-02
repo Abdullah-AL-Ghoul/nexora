@@ -78,11 +78,33 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+/** thrown inside the fulfillment transaction to roll everything back. */
+class FulfillmentError extends Error {
+  constructor(
+    public code: "INSUFFICIENT_STOCK",
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 /** Creates a PENDING order + PENDING payment from a fresh server quote. */
 export async function createOrder(
   userId: string,
   input: CheckoutInput
 ): Promise<OrderSuccess | OrderFailure> {
+  // Double-submit protection: an attempt with the same idempotency key
+  // returns the original PENDING order instead of creating a duplicate.
+  if (input.idempotencyKey) {
+    const existing = await prisma.order.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      select: orderSelect,
+    });
+    if (existing && existing.status === "PENDING") {
+      return { ok: true, order: existing };
+    }
+  }
+
   const quote = await quoteCartItems(input.items);
 
   if (quote.lines.length === 0) {
@@ -100,7 +122,7 @@ export async function createOrder(
   let discount = 0;
   let couponCode: string | null = null;
   if (input.couponCode) {
-    const check = await checkCoupon(input.couponCode, quote.subtotal);
+    const check = await checkCoupon(input.couponCode, quote.subtotal, userId);
     if (!check.ok) {
       return { ok: false, status: 400, error: check.message };
     }
@@ -147,6 +169,7 @@ export async function createOrder(
           address: addressJson,
           couponCode,
           notes: input.notes?.trim() || null,
+          idempotencyKey: input.idempotencyKey ?? null,
           items: {
             create: quote.lines.map((line) => ({
               productId: line.productId,
@@ -165,6 +188,20 @@ export async function createOrder(
       });
       return { ok: true, order };
     } catch (error) {
+      // Two submissions with the same key raced past the findUnique — the
+      // winner created the order, the loser returns it.
+      if (
+        isUniqueViolation(error) &&
+        input.idempotencyKey &&
+        String((error as { meta?: { target?: string[] } }).meta?.target?.[0] ?? "") ===
+          "idempotencyKey"
+      ) {
+        const existing = await prisma.order.findUnique({
+          where: { idempotencyKey: input.idempotencyKey },
+          select: orderSelect,
+        });
+        if (existing) return { ok: true, order: existing };
+      }
       if (isUniqueViolation(error)) continue;
       throw error;
     }
@@ -173,36 +210,175 @@ export async function createOrder(
   return { ok: false, status: 500, error: "Unable to create your order." };
 }
 
-export type FulfillmentResult = { processed: boolean; orderId: string };
+export type FulfillmentResult = {
+  processed: boolean;
+  orderId: string;
+  reason?: "ALREADY_PROCESSED" | "INSUFFICIENT_STOCK";
+};
 
 /**
  * Marks an order PAID exactly once, settles the payment, decrements stock
  * (PURCHASE inventory transactions), and records coupon usage.
  * Safe to call from the Stripe webhook and the local mock — repeat calls
  * return { processed: false } without touching stock.
+ *
+ * Stock decrements are guarded (stock >= qty). If any line cannot be
+ * fulfilled the whole transaction rolls back and the order is cancelled +
+ * payment marked FAILED, so money is never kept for an unfulfillable order.
  */
 export async function markOrderPaid(orderId: string): Promise<FulfillmentResult> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: "PENDING" },
+        data: { status: "PAID", paymentStatus: "SUCCEEDED", paidAt: new Date() },
+      });
+
+      if (claimed.count === 0) {
+        return { processed: false, orderId, reason: "ALREADY_PROCESSED" as const };
+      }
+
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { ...orderSelect, userId: true },
+      });
+      if (!order) {
+        return { processed: false, orderId, reason: "ALREADY_PROCESSED" as const };
+      }
+
+      await tx.payment.update({
+        where: { orderId },
+        data: { status: "SUCCEEDED" },
+      });
+
+      for (const item of order.items) {
+        let balanceAfter: number | null = null;
+
+        if (item.variantId) {
+          const updated = await tx.productVariant.updateMany({
+            where: { id: item.variantId, stock: { gte: item.quantity } },
+            data: { stock: { decrement: item.quantity } },
+          });
+          if (updated.count === 0) {
+            throw new FulfillmentError(
+              "INSUFFICIENT_STOCK",
+              `Variant ${item.variantId} has less stock than ${item.quantity}`
+            );
+          }
+          const variant = await tx.productVariant.findUnique({
+            where: { id: item.variantId },
+            select: { stock: true },
+          });
+          balanceAfter = variant?.stock ?? null;
+        } else if (item.productId) {
+          const updated = await tx.product.updateMany({
+            where: { id: item.productId, stock: { gte: item.quantity } },
+            data: { stock: { decrement: item.quantity } },
+          });
+          if (updated.count === 0) {
+            throw new FulfillmentError(
+              "INSUFFICIENT_STOCK",
+              `Product ${item.productId} has less stock than ${item.quantity}`
+            );
+          }
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { stock: true },
+          });
+          balanceAfter = product?.stock ?? null;
+        }
+
+        await tx.inventoryTransaction.create({
+          data: {
+            productId: item.productId,
+            variantId: item.variantId,
+            delta: -item.quantity,
+            reason: "PURCHASE",
+            balanceAfter,
+            note: `Order ${order.orderNumber}`,
+          },
+        });
+      }
+
+      if (order.couponCode) {
+        const coupon = await tx.coupon.findUnique({
+          where: { code: order.couponCode },
+          select: { id: true, usageLimit: true, usedCount: true },
+        });
+        if (coupon) {
+          // The limit was already validated at order creation; this is a
+          // race safety net. Over-limit at fulfillment never fails a paid
+          // order — it just skips the increment and is logged for review.
+          if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
+            console.error(
+              `coupon ${order.couponCode} exceeded usageLimit at fulfillment (order ${order.orderNumber})`
+            );
+          } else {
+            await tx.coupon.update({
+              where: { id: coupon.id },
+              data: { usedCount: { increment: 1 } },
+            });
+          }
+          await tx.couponUsage.create({
+            data: { couponId: coupon.id, userId: order.userId, orderId: order.id },
+          });
+        }
+      }
+
+      return { processed: true, orderId };
+    });
+  } catch (error) {
+    if (error instanceof FulfillmentError && error.code === "INSUFFICIENT_STOCK") {
+      await cancelPendingOrder(orderId);
+      return { processed: false, orderId, reason: "INSUFFICIENT_STOCK" };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Cancels a PENDING order (and its PENDING payment). Idempotent: orders in
+ * any other state are left untouched. Used by the checkout route when a
+ * Stripe session fails to start, and by checkout.session.expired webhooks.
+ */
+export async function cancelPendingOrder(orderId: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.order.updateMany({
       where: { id: orderId, status: "PENDING" },
-      data: { status: "PAID", paymentStatus: "SUCCEEDED", paidAt: new Date() },
+      data: { status: "CANCELLED", paymentStatus: "FAILED", cancelledAt: new Date() },
     });
+    if (claimed.count === 0) return false;
 
-    if (claimed.count === 0) {
-      return { processed: false, orderId };
-    }
+    await tx.payment.updateMany({
+      where: { orderId, status: "PENDING" },
+      data: { status: "FAILED" },
+    });
+    return true;
+  });
+}
+
+/**
+ * Marks a fulfilled (SUCCEEDED) order REFUNDED and returns the stock with
+ * RETURN inventory transactions. Idempotent: repeat calls are no-ops.
+ * Triggered by the charge.refunded webhook (refunds issued in Stripe).
+ */
+export async function refundOrder(orderId: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const claimedPayment = await tx.payment.updateMany({
+      where: { orderId, status: "SUCCEEDED" },
+      data: { status: "REFUNDED" },
+    });
+    if (claimedPayment.count === 0) return false;
 
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      select: { ...orderSelect, userId: true },
+      select: { ...orderSelect, userId: true, orderNumber: true },
     });
-    if (!order) {
-      return { processed: false, orderId };
-    }
+    if (!order) return false;
 
-    await tx.payment.update({
-      where: { orderId },
-      data: { status: "SUCCEEDED" },
+    await tx.order.update({
+      where: { id: orderId },
+      data: { status: "REFUNDED", paymentStatus: "REFUNDED" },
     });
 
     for (const item of order.items) {
@@ -211,13 +387,13 @@ export async function markOrderPaid(orderId: string): Promise<FulfillmentResult>
       if (item.variantId) {
         const variant = await tx.productVariant.update({
           where: { id: item.variantId },
-          data: { stock: { decrement: item.quantity } },
+          data: { stock: { increment: item.quantity } },
         });
         balanceAfter = variant.stock;
       } else if (item.productId) {
         const product = await tx.product.update({
           where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
+          data: { stock: { increment: item.quantity } },
         });
         balanceAfter = product.stock;
       }
@@ -226,30 +402,14 @@ export async function markOrderPaid(orderId: string): Promise<FulfillmentResult>
         data: {
           productId: item.productId,
           variantId: item.variantId,
-          delta: -item.quantity,
-          reason: "PURCHASE",
+          delta: item.quantity,
+          reason: "RETURN",
           balanceAfter,
-          note: `Order ${order.orderNumber}`,
+          note: `Refund of order ${order.orderNumber}`,
         },
       });
     }
 
-    if (order.couponCode) {
-      const coupon = await tx.coupon.findUnique({
-        where: { code: order.couponCode },
-        select: { id: true },
-      });
-      if (coupon) {
-        await tx.coupon.update({
-          where: { id: coupon.id },
-          data: { usedCount: { increment: 1 } },
-        });
-        await tx.couponUsage.create({
-          data: { couponId: coupon.id, userId: order.userId, orderId: order.id },
-        });
-      }
-    }
-
-    return { processed: true, orderId };
+    return true;
   });
 }

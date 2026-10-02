@@ -114,7 +114,11 @@ export type CouponCheck =
   | { ok: false; message: string };
 
 /** Validates a coupon against its own record (window, activity, limits). */
-export async function checkCoupon(code: string, subtotal: number): Promise<CouponCheck> {
+export async function checkCoupon(
+  code: string,
+  subtotal: number,
+  userId?: string | null
+): Promise<CouponCheck> {
   const coupon = await prisma.coupon.findUnique({ where: { code } });
 
   if (!coupon) return { ok: false, message: "Coupon not found." };
@@ -126,6 +130,17 @@ export async function checkCoupon(code: string, subtotal: number): Promise<Coupo
 
   if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
     return { ok: false, message: "This coupon has reached its usage limit." };
+  }
+
+  // Per-customer cap, counted from fulfilled orders (CouponUsage rows are
+  // only written at fulfillment).
+  if (coupon.perUserLimit !== null && userId) {
+    const usedByCustomer = await prisma.couponUsage.count({
+      where: { couponId: coupon.id, userId },
+    });
+    if (usedByCustomer >= coupon.perUserLimit) {
+      return { ok: false, message: "You have already used this coupon." };
+    }
   }
 
   if (coupon.minOrderAmount !== null && subtotal < coupon.minOrderAmount) {

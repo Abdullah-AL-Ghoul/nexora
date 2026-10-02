@@ -16,6 +16,12 @@ import { mockPaySchema } from "@/lib/validators/checkout";
  *   2. NEXORA_MOCK_PAY must be "1" (omitted in production deploys).
  */
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Mock payments are disabled in production." },
+      { status: 403 }
+    );
+  }
   const env = getServerEnv();
   if (env.STRIPE_SECRET_KEY) {
     return NextResponse.json(
