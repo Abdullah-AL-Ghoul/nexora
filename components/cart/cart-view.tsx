@@ -407,8 +407,8 @@ export function CartView() {
             </div>
           </dl>
 
-          <Button size="lg" className="mt-5 w-full" disabled>
-            Proceed to checkout
+          <Button asChild size="lg" className="mt-5 w-full">
+            <Link href="/checkout">Proceed to checkout</Link>
           </Button>
           <p className="mt-3 text-center text-xs text-muted-foreground">
             Taxes and shipping calculated at checkout · Free shipping over $100

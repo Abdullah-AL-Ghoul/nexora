@@ -22,15 +22,17 @@ export const quoteRequestSchema = z
   })
   .strict();
 
+export const couponCodeSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(30)
+  .transform((value) => value.toUpperCase())
+  .refine((value) => /^[A-Z0-9_-]+$/.test(value), "Invalid coupon code format");
+
 export const couponValidateSchema = z
   .object({
-    code: z
-      .string()
-      .trim()
-      .min(3)
-      .max(30)
-      .transform((value) => value.toUpperCase())
-      .refine((value) => /^[A-Z0-9_-]+$/.test(value), "Invalid coupon code format"),
+    code: couponCodeSchema,
     items: cartItemsSchema,
   })
   .strict();

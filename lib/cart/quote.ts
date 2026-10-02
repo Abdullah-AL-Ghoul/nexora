@@ -12,6 +12,7 @@ export type QuoteLine = {
   variantId: string | null;
   name: string;
   slug: string;
+  sku: string;
   imageUrl: string | null;
   unitPrice: number;
   qty: number;
@@ -41,7 +42,7 @@ export async function quoteCartItems(items: CartItemInput[]): Promise<Quote> {
     where: { id: { in: productIds } },
     include: {
       images: { orderBy: { position: "asc" }, take: 1, select: { url: true } },
-      variants: { select: { id: true, name: true, priceDelta: true, stock: true } },
+      variants: { select: { id: true, name: true, sku: true, priceDelta: true, stock: true } },
     },
   });
 
@@ -93,6 +94,7 @@ export async function quoteCartItems(items: CartItemInput[]): Promise<Quote> {
       variantId: item.variantId ?? null,
       name: product.name,
       slug: product.slug,
+      sku: variant?.sku ?? product.sku,
       imageUrl: product.images[0]?.url ?? null,
       unitPrice,
       qty,

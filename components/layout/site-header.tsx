@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Heart, LogOut, Menu, Search, User } from "lucide-react";
+import { Heart, LogOut, Menu, Package, Search, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "cn";
@@ -115,6 +115,13 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                       >
                         My account
                       </Link>
+                      <Link
+                        href="/account/orders"
+                        onClick={() => setMobileOpen(false)}
+                        className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                      >
+                        Orders
+                      </Link>
                       <form
                         onSubmit={async (event) => {
                           event.preventDefault();
@@ -210,6 +217,12 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                     <Link href="/account">
                       <User className="size-4" aria-hidden="true" />
                       My account
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/account/orders">
+                      <Package className="size-4" aria-hidden="true" />
+                      Orders
                     </Link>
                   </DropdownMenuItem>
                   <SignOutDropdownItem />

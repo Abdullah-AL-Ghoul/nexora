@@ -1,6 +1,9 @@
+import Link from "next/link";
+
 import { requireSession } from "@/lib/auth/guards";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = { title: "Account" };
@@ -22,7 +25,12 @@ export default async function AccountPage() {
           <h1 className="text-2xl font-semibold text-foreground">My account</h1>
           <p className="text-sm text-muted-foreground">Profile and session overview</p>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/account/orders">Orders</Link>
+          </Button>
+          <SignOutButton />
+        </div>
       </div>
 
       <Card>

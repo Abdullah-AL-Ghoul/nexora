@@ -22,6 +22,8 @@ const serverEnvSchema = z.object({
   BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
   STRIPE_SECRET_KEY: z.string().default(""),
   STRIPE_WEBHOOK_SECRET: z.string().default(""),
+  /** "1" enables the local mock payment endpoint (never set in production). */
+  NEXORA_MOCK_PAY: z.string().default(""),
 });
 
 type ClientEnv = z.infer<typeof clientEnvSchema>;
