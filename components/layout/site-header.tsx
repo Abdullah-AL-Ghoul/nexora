@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Menu, Search, User } from "lucide-react";
+import { Heart, LogOut, Menu, Search, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "cn";
+import { CartButton } from "@/components/cart/cart-button";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -90,6 +91,21 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                     Search
                   </Link>
                   <div className="my-2 border-t border-border" />
+                  <Link
+                    href="/cart"
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                  >
+                    Cart
+                  </Link>
+                  <Link
+                    href="/wishlist"
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                  >
+                    Wishlist
+                  </Link>
+                  <div className="my-2 border-t border-border" />
                   {user ? (
                     <>
                       <Link
@@ -171,6 +187,14 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                 <Search className="size-5" aria-hidden="true" />
               </Link>
             </Button>
+
+            <Button asChild variant="ghost" size="icon" aria-label="Wishlist">
+              <Link href="/wishlist">
+                <Heart className="size-5" aria-hidden="true" />
+              </Link>
+            </Button>
+
+            <CartButton />
 
             {user ? (
               <DropdownMenu>

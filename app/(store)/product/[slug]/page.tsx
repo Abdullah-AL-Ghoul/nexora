@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ShoppingBag } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Price } from "@/components/product/price";
+import { ProductActions } from "@/components/product/product-actions";
 import { ProductGallery } from "@/components/product/product-gallery";
 import { ProductGrid } from "@/components/product/product-grid";
 import { RatingStars } from "@/components/product/rating-stars";
 import { ReviewSection } from "@/components/product/review-section";
-import { VariantPicker } from "@/components/product/variant-picker";
+import { getSession } from "@/lib/auth/guards";
 import {
   getProductBySlug,
   getRelatedProducts,
   getReviewStats,
 } from "@/lib/queries/catalog";
+import { getWishlistProductIds } from "@/lib/queries/wishlist";
 
 export async function generateMetadata({
   params,
@@ -48,9 +48,11 @@ export default async function ProductPage({
   const product = await getProductBySlug(slug);
   if (!product) notFound();
 
-  const [stats, related] = await Promise.all([
+  const session = await getSession();
+  const [stats, related, wishlistIds] = await Promise.all([
     getReviewStats(product.id),
     getRelatedProducts(product, 4),
+    session ? getWishlistProductIds(session.user.id) : Promise.resolve([]),
   ]);
 
   return (
@@ -108,27 +110,22 @@ export default async function ProductPage({
             {product.description}
           </p>
 
-          {product.variants.length > 0 && (
-            <VariantPicker
-              basePrice={product.price}
-              variants={product.variants.map((variant) => ({
-                id: variant.id,
-                name: variant.name,
-                priceDelta: variant.priceDelta,
-                stock: variant.stock,
-              }))}
-            />
-          )}
-
-          <div className="flex flex-col gap-3">
-            <Button size="lg" disabled className="w-full sm:w-auto">
-              <ShoppingBag className="size-4" aria-hidden="true" />
-              Add to cart
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Secure checkout · Free shipping over $100 · 30-day returns
-            </p>
-          </div>
+          <ProductActions
+            product={{
+              id: product.id,
+              name: product.name,
+              price: product.price,
+              stock: product.stock,
+            }}
+            variants={product.variants.map((variant) => ({
+              id: variant.id,
+              name: variant.name,
+              priceDelta: variant.priceDelta,
+              stock: variant.stock,
+            }))}
+            isAuthenticated={session !== null}
+            initialInWishlist={wishlistIds.includes(product.id)}
+          />
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-5 text-sm">
             <div className="flex gap-2">

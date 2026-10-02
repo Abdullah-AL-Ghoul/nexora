@@ -7,7 +7,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
  * All queries filter `status: ACTIVE` — draft/archived products never appear.
  */
 
-const cardInclude = {
+export const cardInclude = {
   images: {
     orderBy: { position: "asc" },
     take: 1,

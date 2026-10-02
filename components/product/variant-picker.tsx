@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import { cn } from "cn";
 import { formatPrice } from "@/lib/format";
 
@@ -15,12 +13,15 @@ export type VariantOption = {
 export function VariantPicker({
   basePrice,
   variants,
+  value,
+  onChange,
 }: {
   basePrice: number;
   variants: VariantOption[];
+  value: string | null;
+  onChange: (variantId: string | null) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = variants.find((variant) => variant.id === selectedId) ?? null;
+  const selected = variants.find((variant) => variant.id === value) ?? null;
   const displayPrice = basePrice + (selected?.priceDelta ?? 0);
 
   return (
@@ -30,7 +31,7 @@ export function VariantPicker({
       </legend>
       <div className="flex flex-wrap gap-2">
         {variants.map((variant) => {
-          const active = variant.id === selectedId;
+          const active = variant.id === value;
           const soldOut = variant.stock <= 0;
           return (
             <button
@@ -38,7 +39,7 @@ export function VariantPicker({
               type="button"
               disabled={soldOut}
               aria-pressed={active}
-              onClick={() => setSelectedId(active ? null : variant.id)}
+              onClick={() => onChange(active ? null : variant.id)}
               className={cn(
                 "rounded-md border px-3 py-1.5 text-sm transition-colors",
                 active
