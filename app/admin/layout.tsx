@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AdminNav } from "@/components/admin/admin-nav";
@@ -10,6 +11,10 @@ import { requireRole } from "@/lib/auth/guards";
  * Individual sections tighten this further (e.g. Admin-only pages call
  * `requireRole(ADMIN_ROLES)` themselves).
  */
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole(["ADMIN", "MANAGER"]);

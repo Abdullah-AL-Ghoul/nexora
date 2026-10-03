@@ -21,11 +21,30 @@ export async function generateMetadata({
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const product = await getProductBySlug((await params).slug);
+  const { slug } = await params;
+  const product = await getProductBySlug(slug);
   if (!product) return { title: "Product" };
+
+  const description = product.description.slice(0, 160);
+  const image = product.images[0]?.url ?? undefined;
+
   return {
     title: product.name,
-    description: product.description.slice(0, 160),
+    description,
+    alternates: { canonical: `/product/${product.slug}` },
+    openGraph: {
+      type: "website",
+      title: product.name,
+      description,
+      url: `/product/${product.slug}`,
+      images: image ? [{ url: image, alt: product.name }] : undefined,
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title: product.name,
+      description,
+      images: image ? [image] : undefined,
+    },
   };
 }
 
@@ -55,8 +74,44 @@ export default async function ProductPage({
     session ? getWishlistProductIds(session.user.id) : Promise.resolve([]),
   ]);
 
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.description,
+    sku: product.sku,
+    brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
+    image: product.images.map((image) => image.url),
+    category: product.category.name,
+    offers: {
+      "@type": "Offer",
+      price: (product.price / 100).toFixed(2),
+      priceCurrency: "USD",
+      availability:
+        product.stock > 0
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock",
+    },
+    ...(product.ratingCount > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: product.ratingAvg.toFixed(1),
+            reviewCount: product.ratingCount,
+          },
+        }
+      : {}),
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
+      <script
+        type="application/ld+json"
+        // `<` is escaped so product-sourced strings cannot close the script tag.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(productJsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
       <nav aria-label="Breadcrumb" className="mb-6 text-xs text-muted-foreground">
         <Link href="/" className="transition-colors hover:text-primary">
           Home

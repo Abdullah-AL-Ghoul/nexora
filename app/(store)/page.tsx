@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { CreditCard, RotateCcw, ShieldCheck, Truck } from "lucide-react";
@@ -13,6 +14,10 @@ const VALUE_PROPS = [
   { icon: RotateCcw, title: "30-day returns", description: "No questions asked" },
   { icon: CreditCard, title: "Secure checkout", description: "Powered by Stripe" },
 ] as const;
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default async function HomePage() {
   const { featuredCategories, trending, offers, bestSellers, stats } = await getHomeSections();

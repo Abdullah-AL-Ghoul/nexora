@@ -17,9 +17,16 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const category = await getCategoryBySlug((await params).slug);
   if (!category) return { title: "Category" };
+  const description = category.description ?? `Shop ${category.name} at NEXORA.`;
   return {
     title: category.name,
-    description: category.description ?? `Shop ${category.name} at NEXORA.`,
+    description,
+    alternates: { canonical: `/category/${category.slug}` },
+    openGraph: {
+      title: category.name,
+      description,
+      url: `/category/${category.slug}`,
+    },
   };
 }
 
