@@ -195,6 +195,8 @@ model Product {
   @@index([categoryId, status])
   @@index([status, createdAt])
   @@index([price])
+  @@index([stock])
+  @@index([ratingAvg(sort: Desc), ratingCount(sort: Desc)])
 }
 
 model ProductImage {
@@ -251,7 +253,6 @@ model CartItem {
   variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([cartId, productId, variantId])
-  @@index([cartId])
 }
 
 model Wishlist {
@@ -326,6 +327,7 @@ model OrderItem {
   variant ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([productId])
 }
 
 model Payment {

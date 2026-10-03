@@ -213,12 +213,18 @@ export async function getHomeSections(): Promise<HomeSections> {
   ]);
 
   // Special offer: products whose price is actually below compare-at price.
+  // The real-discount filter runs in SQL (field reference); the fetch is
+  // capped and the top 4 by absolute discount are picked in memory.
   const discounted = await prisma.product.findMany({
-    where: { status: "ACTIVE", compareAtPrice: { not: null } },
+    where: {
+      status: "ACTIVE",
+      compareAtPrice: { gt: prisma.product.fields.price },
+    },
+    orderBy: [{ ratingCount: "desc" }, { createdAt: "desc" }],
+    take: 24,
     include: { ...cardInclude },
   });
   const offerProducts = discounted
-    .filter((product) => product.compareAtPrice !== null && product.compareAtPrice > product.price)
     .sort((a, b) => (b.compareAtPrice! - b.price) - (a.compareAtPrice! - a.price))
     .slice(0, 4);
 
