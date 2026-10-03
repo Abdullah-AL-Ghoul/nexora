@@ -14,8 +14,12 @@ export function formatPrice(cents: number): string {
   return priceFormatter.format(cents / 100);
 }
 
-export function formatDate(date: Date): string {
-  return dateFormatter.format(date);
+/**
+ * Formats a date for display. Accepts ISO strings too: data returned from
+ * the tag cache is JSON-serialized, so Dates arrive as strings on hits.
+ */
+export function formatDate(date: Date | string): string {
+  return dateFormatter.format(typeof date === "string" ? new Date(date) : date);
 }
 
 /** "$120" style discount percentage, or null when not discounted. */

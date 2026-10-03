@@ -9,7 +9,8 @@ type ReviewItem = {
   rating: number;
   comment: string | null;
   verifiedPurchase: boolean;
-  createdAt: Date;
+  /** ISO string on cache hits, Date on fresh queries — formatDate accepts both. */
+  createdAt: Date | string;
   user: { name: string | null };
 };
 
@@ -67,7 +68,7 @@ export function ReviewSection({
                 )}
               </div>
               <time
-                dateTime={review.createdAt.toISOString()}
+                dateTime={typeof review.createdAt === "string" ? review.createdAt : review.createdAt.toISOString()}
                 className="text-xs text-muted-foreground"
               >
                 {formatDate(review.createdAt)}

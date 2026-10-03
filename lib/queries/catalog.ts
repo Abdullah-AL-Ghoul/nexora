@@ -103,7 +103,7 @@ export function getProductBySlug(slug: string) {
 }
 
 async function getProductBySlugUncached(slug: string) {
-  return prisma.product.findFirst({
+  const product = await prisma.product.findFirst({
     where: { slug, status: "ACTIVE" },
     include: {
       images: { orderBy: { position: "asc" }, select: { id: true, url: true, alt: true } },
@@ -124,6 +124,19 @@ async function getProductBySlugUncached(slug: string) {
       },
     },
   });
+
+  // The tag cache serializes to JSON — Dates must cross the boundary as
+  // ISO strings or every cache hit would hand the UI non-Date objects.
+  if (product) {
+    return {
+      ...product,
+      reviews: product.reviews.map((review) => ({
+        ...review,
+        createdAt: review.createdAt.toISOString(),
+      })),
+    };
+  }
+  return product;
 }
 
 export type ProductDetail = NonNullable<Awaited<ReturnType<typeof getProductBySlug>>>;
