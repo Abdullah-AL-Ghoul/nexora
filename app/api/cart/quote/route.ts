@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { quoteCartItems } from "@/lib/cart/quote";
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { quoteRequestSchema } from "@/lib/validators/cart";
 
 /**
@@ -9,6 +10,9 @@ import { quoteRequestSchema } from "@/lib/validators/cart";
  * prices, stock, line totals, and rejected (stale) lines.
  */
 export async function POST(request: Request) {
+  const limit = rateLimit(`quote:${clientIp(request)}`, 60, 60_000);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSeconds);
+
   let body: unknown;
   try {
     body = await request.json();

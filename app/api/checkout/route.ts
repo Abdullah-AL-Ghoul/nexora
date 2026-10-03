@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/guards";
 import { cancelPendingOrder, createOrder } from "@/lib/checkout/orders";
 import { getPublicEnv, getServerEnv } from "@/lib/env";
 import { prisma } from "@/lib/db";
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { checkoutSchema } from "@/lib/validators/checkout";
 
 /**
@@ -14,6 +15,9 @@ import { checkoutSchema } from "@/lib/validators/checkout";
  * Totals/address/stock are all recomputed on the server (strict zod, no money fields).
  */
 export async function POST(request: Request) {
+  const limit = rateLimit(`checkout:${clientIp(request)}`, 10, 60_000);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSeconds);
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Sign in to check out." }, { status: 401 });

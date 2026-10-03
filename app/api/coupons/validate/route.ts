@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/guards";
 import { checkCoupon, quoteCartItems } from "@/lib/cart/quote";
 import { computeDiscount } from "@/lib/cart/pricing";
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { couponValidateSchema } from "@/lib/validators/cart";
 
 /**
@@ -12,6 +13,10 @@ import { couponValidateSchema } from "@/lib/validators/cart";
  * checked against the coupon record.
  */
 export async function POST(request: Request) {
+  // Throttled: the endpoint would otherwise allow coupon-code enumeration.
+  const limit = rateLimit(`coupon:${clientIp(request)}`, 20, 60_000);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSeconds);
+
   let body: unknown;
   try {
     body = await request.json();

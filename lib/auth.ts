@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@/lib/db";
+import { getPublicEnv } from "@/lib/env";
 
 /**
  * NEXORA auth server instance (better-auth + Prisma adapter).
@@ -12,11 +13,25 @@ import { prisma } from "@/lib/db";
  *   roles are granted server-side only.
  * - Disabled accounts (`isActive = false`, set from /admin/users) are
  *   rejected at sign-in.
+ * - Rate limiting is always on: credential endpoints get a stricter quota
+ *   than the generic auth routes.
  * - Dev mode: reset/verification emails are logged to the server console
  *   (no email provider in the local environment).
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  trustedOrigins: [new URL(getPublicEnv().NEXT_PUBLIC_APP_URL).origin],
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 100,
+    storage: "memory",
+    specialRules: [
+      { pathMatcher: "/sign-in/email", window: 60, max: 10 },
+      { pathMatcher: "/sign-up/email", window: 60, max: 10 },
+      { pathMatcher: "/forget-password", window: 60, max: 5 },
+    ],
+  },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/sign-in/email") return;

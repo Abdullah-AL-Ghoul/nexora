@@ -128,15 +128,27 @@ export async function POST(request: Request) {
   }
 
   // Idempotency claim: first delivery wins; duplicates are acknowledged.
+  // processedAt doubles as the receive timestamp for retention pruning.
   let claimed = false;
   try {
-    await prisma.webhookEvent.create({ data: { id: event.id, type: event.type } });
+    await prisma.webhookEvent.create({
+      data: { id: event.id, type: event.type, processedAt: new Date() },
+    });
     claimed = true;
   } catch (error) {
     if (isUniqueViolation(error)) {
       return NextResponse.json({ received: true, duplicate: true });
     }
     return NextResponse.json({ error: "Unable to record event." }, { status: 500 });
+  }
+
+  // Opportunistic retention: keep processed events for 30 days.
+  if (Math.random() < 0.05) {
+    prisma.webhookEvent
+      .deleteMany({
+        where: { processedAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+      })
+      .catch(() => undefined);
   }
 
   try {
