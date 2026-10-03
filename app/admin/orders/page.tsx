@@ -3,6 +3,15 @@ import Link from "next/link";
 import { STAFF_ROLES, requireRole } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDate, formatPrice } from "@/lib/format";
 
 export const metadata = { title: "Orders" };
 
@@ -32,40 +41,44 @@ export default async function AdminOrdersPage() {
         <p className="text-sm text-muted-foreground">Latest 25 orders — staff (Manager + Admin) section</p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-card text-left text-muted-foreground">
-              <th className="px-4 py-3 font-medium">Order</th>
-              <th className="px-4 py-3 font-medium">Customer</th>
-              <th className="px-4 py-3 font-medium">Items</th>
-              <th className="px-4 py-3 font-medium">Total</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Placed</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-card">
+              <TableHead className="px-4 py-3 text-muted-foreground">Order</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Customer</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Items</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Total</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Status</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Placed</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {orders.map((order) => (
-              <tr key={order.id} className="border-b border-border last:border-b-0">
-                <td className="px-4 py-3 font-medium text-foreground">
+              <TableRow key={order.id}>
+                <TableCell className="px-4 py-3 font-medium text-foreground">
                   <Link
                     href={`/admin/orders/${order.id}`}
                     className="underline-offset-2 hover:underline"
                   >
                     {order.orderNumber}
                   </Link>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{order.user.name ?? order.user.email}</td>
-                <td className="px-4 py-3 text-muted-foreground">{order._count.items}</td>
-                <td className="px-4 py-3 text-foreground">${(order.total / 100).toFixed(2)}</td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell className="px-4 py-3 text-muted-foreground">
+                  {order.user.name ?? order.user.email}
+                </TableCell>
+                <TableCell className="px-4 py-3 text-muted-foreground">{order._count.items}</TableCell>
+                <TableCell className="px-4 py-3 text-foreground">{formatPrice(order.total)}</TableCell>
+                <TableCell className="px-4 py-3">
                   <Badge variant={statusVariant[order.status] ?? "secondary"}>{order.status}</Badge>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{order.placedAt.toISOString().slice(0, 10)}</td>
-              </tr>
+                </TableCell>
+                <TableCell className="px-4 py-3 text-muted-foreground">
+                  {formatDate(order.placedAt)}
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

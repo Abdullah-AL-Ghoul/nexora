@@ -48,7 +48,8 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* NEXORA brand tokens — Dark / Premium / Minimal / Precision (M13) */
+/* NEXORA brand tokens — Dark / Premium / Minimal / Precision (M13).
+   Dark-only design: :root IS the dark theme (no .dark override needed). */
 :root {
   color-scheme: dark;
   --background: #0f1113;
@@ -85,35 +86,6 @@
   --sidebar-ring: #c9a961;
 }
 
-.dark {
-  --background: #0f1113;
-  --foreground: #f5f5f5;
-  --card: #171a1f;
-  --card-foreground: #f5f5f5;
-  --popover: #171a1f;
-  --popover-foreground: #f5f5f5;
-  --primary: #c9a961;
-  --primary-foreground: #0f1113;
-  --secondary: #1e2228;
-  --secondary-foreground: #e7d3a0;
-  --muted: #1a1e23;
-  --muted-foreground: #9aa0a6;
-  --accent: #22262c;
-  --accent-foreground: #f5f5f5;
-  --destructive: oklch(0.65 0.22 25);
-  --border: rgb(245 245 245 / 10%);
-  --input: rgb(245 245 245 / 15%);
-  --ring: #c9a961;
-  --sidebar: #171a1f;
-  --sidebar-foreground: #f5f5f5;
-  --sidebar-primary: #c9a961;
-  --sidebar-primary-foreground: #0f1113;
-  --sidebar-accent: #22262c;
-  --sidebar-accent-foreground: #f5f5f5;
-  --sidebar-border: rgb(245 245 245 / 10%);
-  --sidebar-ring: #c9a961;
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -125,3 +97,16 @@
     @apply font-sans;
   }
 }
+
+/* Motion sensitivity: collapse animations and transitions on request. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

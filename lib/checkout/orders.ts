@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
+import { revalidateTag } from "next/cache";
 
 import { prisma } from "@/lib/db";
+import { CATALOG_TAG } from "@/lib/cache";
 import { checkCoupon, quoteCartItems } from "@/lib/cart/quote";
 import { computeDiscount, formatCartTotals } from "@/lib/cart/pricing";
 import { resolveShipping, type ShippingMethod } from "@/lib/checkout/shipping";
@@ -14,6 +16,8 @@ import type { CheckoutInput } from "@/lib/validators/checkout";
  * - createOrder re-prices everything server-side (client totals never trusted).
  * - markOrderPaid is the ONLY place stock is decremented (webhook / mock pay),
  *   and it is idempotent: the PENDING → PAID claim happens once per order.
+ * - Fulfillment/cancellation/refund all revalidate the public catalog cache:
+ *   stock and best-seller data feed storefront pages.
  */
 
 const orderSelect = {
@@ -333,6 +337,8 @@ export async function markOrderPaid(orderId: string): Promise<FulfillmentResult>
       return { processed: false, orderId, reason: "INSUFFICIENT_STOCK" };
     }
     throw error;
+  } finally {
+    revalidateTag(CATALOG_TAG, "max");
   }
 }
 
@@ -353,6 +359,7 @@ export async function cancelPendingOrder(orderId: string): Promise<boolean> {
       where: { orderId, status: "PENDING" },
       data: { status: "FAILED" },
     });
+    revalidateTag(CATALOG_TAG, "max");
     return true;
   });
 }
@@ -410,6 +417,7 @@ export async function refundOrder(orderId: string): Promise<boolean> {
       });
     }
 
+    revalidateTag(CATALOG_TAG, "max");
     return true;
   });
 }

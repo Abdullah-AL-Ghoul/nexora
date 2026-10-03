@@ -3,6 +3,15 @@ import { Pager } from "@/components/pager";
 import { ADMIN_ROLES, requireRole } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDate } from "@/lib/format";
 
 export const metadata = { title: "Users" };
 
@@ -72,29 +81,29 @@ export default async function AdminUsersPage({
           No users match this search.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-card text-left text-muted-foreground">
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Joined</th>
-                <th className="px-4 py-3 font-medium">Controls</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-lg border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-card">
+                <TableHead className="px-4 py-3 text-muted-foreground">Name</TableHead>
+                <TableHead className="px-4 py-3 text-muted-foreground">Email</TableHead>
+                <TableHead className="px-4 py-3 text-muted-foreground">Role</TableHead>
+                <TableHead className="px-4 py-3 text-muted-foreground">Status</TableHead>
+                <TableHead className="px-4 py-3 text-muted-foreground">Joined</TableHead>
+                <TableHead className="px-4 py-3 text-muted-foreground">Controls</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {users.map((user) => (
-                <tr key={user.id} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-3 text-foreground">{user.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={user.id}>
+                  <TableCell className="px-4 py-3 text-foreground">{user.name ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">{user.email}</TableCell>
+                  <TableCell className="px-4 py-3">
                     <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>
                       {roleLabel[user.role] ?? user.role}
                     </Badge>
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <span
                       className={
                         user.isActive
@@ -104,11 +113,11 @@ export default async function AdminUsersPage({
                     >
                       {user.isActive ? "Active" : "Disabled"}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {user.createdAt.toISOString().slice(0, 10)}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
+                    {formatDate(user.createdAt)}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <UserControls
                       userId={user.id}
                       role={user.role}
@@ -116,11 +125,11 @@ export default async function AdminUsersPage({
                       isSelf={user.id === currentUserId}
                       isLastAdmin={activeAdminCount <= 1}
                     />
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

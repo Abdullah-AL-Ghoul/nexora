@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/api-guards";
 import { STAFF_ROLES } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
+import { CATALOG_TAG } from "@/lib/cache";
+import { revalidateTag } from "next/cache";
 import { productCreateSchema } from "@/lib/validators/admin";
 
 /** POST /api/admin/products — create a product (Manager + Admin). */
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
       select: { id: true, slug: true },
     });
 
+    revalidateTag(CATALOG_TAG, "max");
     return NextResponse.json({ product }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Unable to create product." }, { status: 500 });

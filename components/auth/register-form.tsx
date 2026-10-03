@@ -39,7 +39,7 @@ export function RegisterForm() {
         <Label htmlFor="name">Name</Label>
         <Input id="name" autoComplete="name" placeholder="Jane Doe" {...form.register("name")} />
         {form.formState.errors.name && (
-          <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.name.message}</p>
         )}
       </div>
 
@@ -47,7 +47,7 @@ export function RegisterForm() {
         <Label htmlFor="email">Email</Label>
         <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" {...form.register("email")} />
         {form.formState.errors.email && (
-          <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.email.message}</p>
         )}
       </div>
 
@@ -55,7 +55,7 @@ export function RegisterForm() {
         <Label htmlFor="password">Password</Label>
         <Input id="password" type="password" autoComplete="new-password" placeholder="At least 8 characters" {...form.register("password")} />
         {form.formState.errors.password && (
-          <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.password.message}</p>
         )}
       </div>
 

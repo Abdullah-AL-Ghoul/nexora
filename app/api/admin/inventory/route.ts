@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { requireApiRole } from "@/lib/auth/api-guards";
 import { STAFF_ROLES } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
+import { CATALOG_TAG } from "@/lib/cache";
+import { revalidateTag } from "next/cache";
 import { inventoryAdjustSchema } from "@/lib/validators/admin";
 
 /**
@@ -68,6 +70,7 @@ export async function POST(request: Request) {
       return updated;
     });
 
+    revalidateTag(CATALOG_TAG, "max");
     return NextResponse.json({ product: result });
   } catch {
     return NextResponse.json({ error: "Unable to adjust inventory." }, { status: 500 });

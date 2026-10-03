@@ -4,6 +4,14 @@ import { STAFF_ROLES, requireRole } from "@/lib/auth/guards";
 import { formatPrice } from "@/lib/format";
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -91,60 +99,60 @@ export default async function AdminProductsPage({
         </Button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-card text-left text-muted-foreground">
-              <th className="px-4 py-3 font-medium">Product</th>
-              <th className="px-4 py-3 font-medium">Category</th>
-              <th className="px-4 py-3 font-medium">Price</th>
-              <th className="px-4 py-3 font-medium">Stock</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">
+      <div className="rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-card">
+              <TableHead className="px-4 py-3 text-muted-foreground">Product</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Category</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Price</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Stock</TableHead>
+              <TableHead className="px-4 py-3 text-muted-foreground">Status</TableHead>
+              <TableHead className="px-4 py-3">
                 <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {products.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                   No products match this filter.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {products.map((product) => (
-              <tr key={product.id} className="border-b border-border last:border-b-0">
-                <td className="px-4 py-3">
+              <TableRow key={product.id}>
+                <TableCell className="px-4 py-3">
                   <span className="block font-medium text-foreground">{product.name}</span>
                   <span className="text-xs text-muted-foreground">{product.sku}</span>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{product.category.name}</td>
-                <td className="px-4 py-3 tabular-nums text-foreground">
+                </TableCell>
+                <TableCell className="px-4 py-3 text-muted-foreground">{product.category.name}</TableCell>
+                <TableCell className="px-4 py-3 tabular-nums text-foreground">
                   {formatPrice(product.price)}
-                </td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell className="px-4 py-3">
                   <Badge variant={product.stock <= 5 ? "destructive" : "secondary"}>
                     {product.stock}
                   </Badge>
-                </td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell className="px-4 py-3">
                   <Badge variant={statusVariant[product.status] ?? "secondary"}>
                     {product.status}
                   </Badge>
-                </td>
-                <td className="px-4 py-3 text-right">
+                </TableCell>
+                <TableCell className="px-4 py-3 text-right">
                   <Link
                     href={`/admin/products/${product.id}`}
                     className="text-primary underline-offset-2 hover:underline"
                   >
                     Edit
                   </Link>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

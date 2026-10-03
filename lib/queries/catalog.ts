@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/db";
+import { cachedCatalog } from "@/lib/cache";
 import { PRODUCTS_PER_PAGE, type CatalogParams } from "@/lib/catalog/params";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 /**
  * Storefront data access (server-only).
  * All queries filter `status: ACTIVE` — draft/archived products never appear.
+ *
+ * Public, non-personalized queries are wrapped in the tag-based catalog
+ * cache (lib/cache.ts); user-specific data stays per-request.
  */
 
 export const cardInclude = {
@@ -65,7 +69,7 @@ const ORDER_BY: Record<
   rating: [{ ratingAvg: "desc" }, { ratingCount: "desc" }],
 };
 
-export async function getCatalogProducts(params: CatalogParams): Promise<CatalogResult> {
+async function getCatalogProductsUncached(params: CatalogParams): Promise<CatalogResult> {
   const where = buildWhere(params);
   const skip = (params.page - 1) * PRODUCTS_PER_PAGE;
 
@@ -88,7 +92,17 @@ export async function getCatalogProducts(params: CatalogParams): Promise<Catalog
   };
 }
 
-export async function getProductBySlug(slug: string) {
+export function getCatalogProducts(params: CatalogParams): Promise<CatalogResult> {
+  return cachedCatalog(["catalog-products", JSON.stringify(params)], () =>
+    getCatalogProductsUncached(params)
+  );
+}
+
+export function getProductBySlug(slug: string) {
+  return cachedCatalog(["product", slug], () => getProductBySlugUncached(slug));
+}
+
+async function getProductBySlugUncached(slug: string) {
   return prisma.product.findFirst({
     where: { slug, status: "ACTIVE" },
     include: {
@@ -124,7 +138,11 @@ export type CategoryCard = {
 };
 
 /** All categories with ACTIVE product counts and a representative image. */
-export async function getCategories(): Promise<CategoryCard[]> {
+export function getCategories(): Promise<CategoryCard[]> {
+  return cachedCatalog(["categories"], () => getCategoriesUncached());
+}
+
+async function getCategoriesUncached(): Promise<CategoryCard[]> {
   const categories = await prisma.category.findMany({
     orderBy: { position: "asc" },
     include: { _count: { select: { products: { where: { status: "ACTIVE" } } } } },
@@ -159,8 +177,10 @@ export async function getCategories(): Promise<CategoryCard[]> {
   }));
 }
 
-export async function getCategoryBySlug(slug: string) {
-  return prisma.category.findUnique({ where: { slug } });
+export function getCategoryBySlug(slug: string) {
+  return cachedCatalog(["category", slug], () =>
+    prisma.category.findUnique({ where: { slug } })
+  );
 }
 
 /** Fill up to `take` products, ranked by rating, excluding already-selected ids. */
@@ -188,7 +208,11 @@ export type HomeSections = {
   };
 };
 
-export async function getHomeSections(): Promise<HomeSections> {
+export function getHomeSections(): Promise<HomeSections> {
+  return cachedCatalog(["home-sections"], () => getHomeSectionsUncached(), 120);
+}
+
+async function getHomeSectionsUncached(): Promise<HomeSections> {
   const [categories, trendingRated, sold, productCount, reviewStats] = await Promise.all([
     getCategories(),
     prisma.product.findMany({
@@ -301,7 +325,16 @@ export async function getReviewStats(productId: string): Promise<ReviewStats> {
 }
 
 /** Same-category products (fallback: top rated), excluding the current one. */
-export async function getRelatedProducts(
+export function getRelatedProducts(
+  product: { id: string; categoryId: string },
+  take = 4
+): Promise<ProductCardData[]> {
+  return cachedCatalog(["related", product.id, String(take)], () =>
+    getRelatedProductsUncached(product, take)
+  );
+}
+
+async function getRelatedProductsUncached(
   product: { id: string; categoryId: string },
   take = 4
 ): Promise<ProductCardData[]> {

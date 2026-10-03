@@ -39,7 +39,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         <Label htmlFor="email">Email</Label>
         <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" {...form.register("email")} />
         {form.formState.errors.email && (
-          <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.email.message}</p>
         )}
       </div>
 
@@ -52,7 +52,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         </div>
         <Input id="password" type="password" autoComplete="current-password" placeholder="••••••••" {...form.register("password")} />
         {form.formState.errors.password && (
-          <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.password.message}</p>
         )}
       </div>
 

@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { requireRole, type AppRole } from "@/lib/auth/guards";
+
+import { AdminNav } from "@/components/admin/admin-nav";
+import { requireRole } from "@/lib/auth/guards";
 
 /**
  * Admin area guard: every page under /admin runs through this layout.
@@ -9,40 +11,30 @@ import { requireRole, type AppRole } from "@/lib/auth/guards";
  * `requireRole(ADMIN_ROLES)` themselves).
  */
 
-const navItems: { href: string; label: string; roles: AppRole[] }[] = [
-  { href: "/admin", label: "Dashboard", roles: ["ADMIN", "MANAGER"] },
-  { href: "/admin/orders", label: "Orders", roles: ["ADMIN", "MANAGER"] },
-  { href: "/admin/products", label: "Products", roles: ["ADMIN", "MANAGER"] },
-  { href: "/admin/users", label: "Users", roles: ["ADMIN"] },
-];
-
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireRole(["ADMIN", "MANAGER"]);
   const role = String(session.user.role);
-  const visibleNav = navItems.filter((item) => item.roles.includes(role as AppRole));
 
   return (
     <div className="flex min-h-screen">
+      <a
+        href="#admin-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+      >
+        Skip to content
+      </a>
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card p-4">
         <Link href="/" className="mb-6 px-2 text-lg font-semibold tracking-tight">
           NEXORA <span className="text-xs font-normal text-muted-foreground">Admin</span>
         </Link>
-        <nav className="flex flex-col gap-1">
-          {visibleNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <AdminNav role={role} />
         <div className="mt-auto border-t border-border px-2 pt-4 text-xs text-muted-foreground">
           Signed in as <span className="text-foreground">{session.user.email}</span>
         </div>
       </aside>
-      <main className="flex-1 overflow-x-auto p-8">{children}</main>
+      <main id="admin-content" tabIndex={-1} className="flex-1 overflow-x-auto p-8 focus:outline-none">
+        {children}
+      </main>
     </div>
   );
 }
