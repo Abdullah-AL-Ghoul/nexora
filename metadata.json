@@ -1,0 +1,6 @@
+{
+  "name": "NEXORA — Full-Stack E-Commerce Platform",
+  "description": "Production-grade modern luxury e-commerce platform with precision dark design, comprehensive catalog, cart, checkout, and admin dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

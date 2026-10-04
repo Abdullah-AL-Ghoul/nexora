@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authenticated user profile and role assignment",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["CUSTOMER", "MANAGER", "ADMIN"] },
+        "wishlist": { "type": "array", "description": "Array of saved product IDs in wishlist" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer purchase commission and tracking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "total": { "type": "number" },
+        "status": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["orderNumber", "userId", "total", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Customer appraisal for an artifact",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "title": { "type": "string" },
+        "comment": { "type": "string" },
+        "isApproved": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productId", "userId", "rating", "comment"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles indexed by UID"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Order records indexed by order ID"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Product reviews and ratings"
+    }
+  }
+}
