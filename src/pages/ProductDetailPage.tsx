@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
 import { fetchProductBySlug, fetchRelatedProducts, ApiProduct } from '../lib/api';
@@ -17,9 +18,13 @@ import {
 } from 'lucide-react';
 
 export const ProductDetailPage: React.FC = () => {
-  const { routeParams, navigate, addToCart, toggleWishlist, isInWishlist } = useStore();
+  const { navigate, addToCart, toggleWishlist, isInWishlist } = useStore();
   const { t, language, getCategoryName } = useTranslation();
-  const slug = routeParams.slug;
+  // Read the slug from the URL directly (react-router); fall back to the store
+  // routeParams only if the param is absent (legacy deep-link path).
+  const urlSlug = useParams<{ slug: string }>().slug;
+  const routeParamsSlug = useStore((s) => s.routeParams.slug);
+  const slug = urlSlug || routeParamsSlug;
 
   const [product, setProduct] = useState<Product | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);

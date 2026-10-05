@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
 import { fetchOrderById } from '../lib/api';
@@ -81,9 +82,13 @@ const mapOrder = (raw: any): Order => ({
 });
 
 export const OrderSuccessPage: React.FC = () => {
-  const { routeParams, navigate } = useStore();
+  const { navigate } = useStore();
   const { language } = useTranslation();
-  const orderId = routeParams.orderId;
+  // Read orderId from the URL directly (react-router); fall back to the store
+  // routeParams only if the param is absent (legacy deep-link path).
+  const urlOrderId = useParams<{ orderId: string }>().orderId;
+  const storeOrderId = useStore((s) => s.routeParams.orderId);
+  const orderId = urlOrderId || storeOrderId;
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);

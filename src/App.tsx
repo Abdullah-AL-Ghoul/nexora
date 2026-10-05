@@ -32,9 +32,11 @@ function PageLoader() {
   );
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
-  static getDerivedStateFromError() { return { hasError: true }; }
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message?: string }> {
+  state: { hasError: boolean; message?: string } = { hasError: false };
+  static getDerivedStateFromError(err: unknown) {
+    return { hasError: true, message: err instanceof Error ? err.message : String(err) };
+  }
   render() {
     if (this.state.hasError) {
       return (
@@ -42,6 +44,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
           <div className="text-4xl" aria-hidden>🛠</div>
           <h1 className="font-serif-luxury text-2xl">Something went wrong</h1>
           <p className="max-w-md text-sm text-[#9CA3AF]">An unexpected error interrupted this page.</p>
+          {this.state.message && (
+            <details className="max-w-lg rounded-md border border-[#242831] bg-[#121418] px-4 py-3 text-left text-xs text-[#9CA3AF]">
+              <summary className="cursor-pointer font-medium text-[#C9A961]">Error details</summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words">{this.state.message}</pre>
+            </details>
+          )}
           <button
             onClick={() => { this.setState({ hasError: false }); window.location.reload(); }}
             className="rounded-md bg-[#C9A961] px-5 py-2 font-medium text-[#0F1113] hover:bg-[#E7D3A0]"
@@ -60,24 +68,24 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 function RouteParamsSync() {
   const location = useLocation();
   const params = useParams();
-  const setRouteParams = useStore((s) => s.navigate);
 
   useEffect(() => {
-    const path = location.pathname.replace(/^\/+|\/+$/g, '');
-    const [seg, sub] = path.split('/');
+    const path = location.pathname;
+    const cleanPath = path.replace(/^\/+|\/+$/g, '');
+    const [seg, sub] = cleanPath.split('/');
     const routeMap: Record<string, string> = {
       '': 'home', 'shop': 'shop', 'categories': 'categories', 'about': 'about',
       'product': 'product', 'checkout': 'checkout', 'orders': 'orders',
       'wishlist': 'wishlist', 'admin': 'admin-dashboard', 'login': 'login',
       'order-success': 'order-success',
     };
-    const route = routeMap[seg] ?? routeMap[path] ?? 'home';
+    const route = routeMap[seg] ?? routeMap[cleanPath] ?? 'home';
     // Use a lightweight store write (not navigate) to avoid loops
     useStore.setState((s) => ({
       currentRoute: route,
-      routeParams: { ...(params as Record<string, string>), ...(sub ? { orderId: sub } : {}) },
+      routeParams: { ...(params ?? {}), ...(sub ? { orderId: sub } : {}) },
     }));
-  }, [location.pathname, params]);
+  }, [location.pathname]);
 
   return null;
 }

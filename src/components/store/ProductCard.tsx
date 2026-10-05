@@ -12,7 +12,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const { navigate, addToCart, toggleWishlist, isInWishlist, setQuickViewProduct } = useStore();
   const { t, language, getCategoryName } = useTranslation();
 
-  const primaryImage = product.images.find((i) => i.isPrimary) || product.images[0];
+  const primaryImage = (product.images && product.images.length > 0)
+    ? (product.images.find((i) => i.isPrimary) || product.images[0])
+    : undefined;
   const isWishlisted = isInWishlist(product.id);
   const localizedCatName = getCategoryName(product.categoryId, product.categoryName);
 
@@ -46,13 +48,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       className="group relative flex flex-col bg-[#171A1F] border border-[#242831] hover:border-[#C9A961]/40 rounded-lg overflow-hidden transition-all duration-300 cursor-pointer"
     >
       {/* Product Image Stage */}
-      <div className="relative aspect-square w-full overflow-hidden bg-[#121418]">
-        <img
-          src={primaryImage.url}
-          alt={primaryImage.altText || product.name}
-          loading="lazy"
-          className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
-        />
+      <div className="relative aspect-square w-full overflow-hidden bg-[#121418] flex items-center justify-center">
+        {primaryImage ? (
+          <img
+            src={primaryImage.url}
+            alt={primaryImage.altText || product.name}
+            loading="lazy"
+            className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <span className="font-serif-luxury text-sm text-[#9CA3AF]">{product.name}</span>
+        )}
 
         {/* Hover Quick Action Layer */}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-3 gap-2 backdrop-blur-[2px]">

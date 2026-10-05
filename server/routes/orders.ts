@@ -104,6 +104,7 @@ export function ordersRouter() {
           productImage: JSON.parse(product.images || '[]')[0]?.url ?? '',
           sku,
           variantName,
+          variantId: item.variantId ?? null,
           unitPrice,
           quantity: item.quantity,
           totalPrice: itemTotal,
