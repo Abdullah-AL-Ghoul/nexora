@@ -1,9 +1,32 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
+import { fetchCategories, fetchProducts, ApiCategory, ApiProduct } from '../lib/api';
+import { Category, Product } from '../types';
 import { ProductGrid } from '../components/store/ProductGrid';
-import { Search, ArrowUpDown, X, Check } from 'lucide-react';
+import { Search, ArrowUpDown, X, Check, Loader2, AlertTriangle } from 'lucide-react';
+
+type LoadState = 'loading' | 'error' | 'ready';
+
+// Map snake_case API fields to the client Category shape used by the UI.
+const toCategory = (c: ApiCategory): Category => ({
+  id: c.id,
+  name: c.name,
+  slug: c.slug,
+  description: c.description,
+  imageUrl: c.image_url,
+  itemCount: c.item_count,
+});
+
+// ApiProduct already matches the client Product shape apart from `status`, the
+// nullable `compareAtPrice`, and variants whose productId can be missing —
+// normalize all three to the client Product type.
+const toProduct = (p: ApiProduct): Product => ({
+  ...p,
+  compareAtPrice: p.compareAtPrice ?? undefined,
+  status: p.status as Product['status'],
+  variants: p.variants.map((v) => ({ ...v, productId: v.productId ?? p.id })),
+});
 
 export const ShopPage: React.FC = () => {
   const {
@@ -14,7 +37,7 @@ export const ShopPage: React.FC = () => {
     sortBy,
     setSortBy,
   } = useStore();
-  const { t, language, localizeCategory, getCategoryName } = useTranslation();
+  const { t, language, localizeCategory } = useTranslation();
 
   const [minPrice, setMinPrice] = useState<number | undefined>(undefined);
   const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined);
@@ -22,13 +45,27 @@ export const ShopPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  const rawCategories = db.getCategories();
-  const categories = rawCategories.map(localizeCategory);
+  // Server-sourced data
+  const [rawCategories, setRawCategories] = useState<ApiCategory[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [totalProductCount, setTotalProductCount] = useState(0);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Debounced search to avoid firing a request on every keystroke.
+  const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const categories = rawCategories.map(toCategory).map(localizeCategory);
 
   // Smart deterministic search parsing check (e.g. "under 500", "audio", "leather")
   const parsedFilters = useMemo(() => {
     let effectiveMax = maxPrice;
-    let query = searchQuery;
+    let query = debouncedQuery;
 
     // Check for "under X" or "< X" in query
     const underMatch = query.match(/(?:under|<)\s*(\d+)/i);
@@ -38,21 +75,49 @@ export const ShopPage: React.FC = () => {
     }
 
     return { effectiveMax, cleanedQuery: query };
-  }, [searchQuery, maxPrice]);
+  }, [debouncedQuery, maxPrice]);
 
-  const filteredProducts = useMemo(() => {
-    return db.getProducts({
-      categorySlug: selectedCategory,
-      search: parsedFilters.cleanedQuery,
-      minPrice,
-      maxPrice: parsedFilters.effectiveMax,
-      sortBy,
-      inStockOnly,
-    });
-  }, [selectedCategory, parsedFilters, minPrice, sortBy, inStockOnly]);
+  const load = useCallback(async () => {
+    setLoadState('loading');
+    setError('');
+    try {
+      const [rawCats, items, allItems] = await Promise.all([
+        fetchCategories(),
+        fetchProducts({
+          categorySlug: selectedCategory,
+          search: parsedFilters.cleanedQuery,
+          minPrice,
+          maxPrice: parsedFilters.effectiveMax,
+          sortBy,
+          inStockOnly,
+        }),
+        fetchProducts(),
+      ]);
+      setRawCategories(rawCats);
+      setTotalProductCount(allItems.length);
+      setProducts(items.map(toProduct));
+      setCurrentPage(1);
+      setLoadState('ready');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load products');
+      setLoadState('error');
+    }
+  }, [
+    selectedCategory,
+    parsedFilters.cleanedQuery,
+    parsedFilters.effectiveMax,
+    minPrice,
+    sortBy,
+    inStockOnly,
+    reloadKey,
+  ]);
 
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-  const paginatedProducts = filteredProducts.slice(
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const totalPages = Math.ceil(products.length / itemsPerPage);
+  const paginatedProducts = products.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -70,6 +135,8 @@ export const ShopPage: React.FC = () => {
     setInStockOnly(false);
     setCurrentPage(1);
   };
+
+  const handleRetry = () => setReloadKey((k) => k + 1);
 
   const currentCategoryObj = categories.find((c) => c.slug === selectedCategory);
 
@@ -104,7 +171,7 @@ export const ShopPage: React.FC = () => {
                 : 'bg-[#171A1F] text-[#9CA3AF] hover:text-[#F5F5F5] border border-[#242831]'
             }`}
           >
-            {t.shop.allCategories} ({db.getProducts().length})
+            {t.shop.allCategories} ({totalProductCount})
           </button>
           {categories.map((cat) => (
             <button
@@ -204,46 +271,81 @@ export const ShopPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Products Grid Component */}
-      <ProductGrid
-        products={paginatedProducts}
-        onResetFilters={handleClearFilters}
-        emptyTitle={t.shop.emptyTitle}
-        emptyDescription={t.shop.emptyDescription}
-      />
+      {/* Loading State */}
+      {loadState === 'loading' && (
+        <section className="flex items-center justify-center py-24">
+          <Loader2 className="w-10 h-10 text-[#C9A961] animate-spin" />
+        </section>
+      )}
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="pt-8 border-t border-[#242831] flex items-center justify-between text-xs text-[#9CA3AF]">
-          <div>
-            {language === 'ar'
-              ? `عرض ${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, filteredProducts.length)} من أصل ${filteredProducts.length} قطعة`
-              : `Showing ${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, filteredProducts.length)} of ${filteredProducts.length} artifacts`}
+      {/* Error State */}
+      {loadState === 'error' && (
+        <section>
+          <div className="py-20 text-center space-y-4 rounded-xl bg-[#171A1F] border border-[#242831] p-8 max-w-xl mx-auto my-8">
+            <div className="w-14 h-14 rounded-full bg-[#121418] border border-[#242831] flex items-center justify-center mx-auto text-[#C9A961]">
+              <AlertTriangle className="w-7 h-7 opacity-90" />
+            </div>
+            <h3 className="font-serif-luxury text-lg font-bold text-[#F5F5F5]">
+              {language === 'ar' ? 'تعذّر تحميل المنتجات' : "Couldn't Load Products"}
+            </h3>
+            {error && (
+              <p className="text-xs text-[#9CA3AF] max-w-sm mx-auto leading-relaxed">
+                {error}
+              </p>
+            )}
+            <button
+              onClick={handleRetry}
+              className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer"
+            >
+              {language === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+            </button>
           </div>
+        </section>
+      )}
 
-          <div className="flex items-center gap-1.5">
-            {[...Array(totalPages)].map((_, i) => {
-              const page = i + 1;
-              const isActive = currentPage === page;
-              return (
-                <button
-                  key={page}
-                  onClick={() => {
-                    setCurrentPage(page);
-                    window.scrollTo({ top: 200, behavior: 'smooth' });
-                  }}
-                  className={`w-8 h-8 rounded text-xs font-mono font-medium transition-colors cursor-pointer ${
-                    isActive
-                      ? 'bg-[#C9A961] text-[#0F1113] font-bold'
-                      : 'bg-[#171A1F] border border-[#242831] text-[#F5F5F5] hover:border-[#C9A961]'
-                  }`}
-                >
-                  {page}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {/* Products Grid + Pagination */}
+      {loadState === 'ready' && (
+        <>
+          <ProductGrid
+            products={paginatedProducts}
+            onResetFilters={handleClearFilters}
+            emptyTitle={t.shop.emptyTitle}
+            emptyDescription={t.shop.emptyDescription}
+          />
+
+          {totalPages > 1 && (
+            <div className="pt-8 border-t border-[#242831] flex items-center justify-between text-xs text-[#9CA3AF]">
+              <div>
+                {language === 'ar'
+                  ? `عرض ${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, products.length)} من أصل ${products.length} قطعة`
+                  : `Showing ${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, products.length)} of ${products.length} artifacts`}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {[...Array(totalPages)].map((_, i) => {
+                  const page = i + 1;
+                  const isActive = currentPage === page;
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => {
+                        setCurrentPage(page);
+                        window.scrollTo({ top: 200, behavior: 'smooth' });
+                      }}
+                      className={`w-8 h-8 rounded text-xs font-mono font-medium transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-[#C9A961] text-[#0F1113] font-bold'
+                          : 'bg-[#171A1F] border border-[#242831] text-[#F5F5F5] hover:border-[#C9A961]'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

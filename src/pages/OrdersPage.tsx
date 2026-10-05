@@ -1,13 +1,123 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
-import { Package, Truck, ArrowRight, ShieldCheck } from 'lucide-react';
+import { fetchOrders } from '../lib/api';
+import { Order, OrderItem, Address } from '../types';
+import { Package, Truck, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
+
+// Map server-side snake_case order payloads to the camelCase Order shape the JSX expects.
+const mapOrderItem = (raw: any): OrderItem => {
+  const unitPrice = Number(raw.unit_price ?? raw.unitPrice ?? 0);
+  const quantity = Number(raw.quantity ?? 0);
+  return {
+    id: raw.id ?? '',
+    orderId: raw.order_id ?? raw.orderId ?? '',
+    productId: raw.product_id ?? raw.productId ?? '',
+    productName: raw.product_name ?? raw.productName ?? '',
+    productImage: raw.product_image ?? raw.productImage ?? '',
+    sku: raw.sku ?? '',
+    variantName: raw.variant_name ?? raw.variantName,
+    unitPrice,
+    quantity,
+    totalPrice: Number(raw.total_price ?? raw.totalPrice ?? unitPrice * quantity),
+  };
+};
+
+const parseShippingAddress = (raw: any): Address => {
+  let parsed: any = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (parsed && typeof parsed === 'object') {
+    return {
+      id: parsed.id ?? '',
+      userId: parsed.user_id ?? parsed.userId ?? '',
+      fullName: parsed.full_name ?? parsed.fullName ?? '',
+      street: parsed.street ?? '',
+      apartment: parsed.apartment,
+      city: parsed.city ?? '',
+      state: parsed.state ?? '',
+      postalCode: parsed.postal_code ?? parsed.postalCode ?? '',
+      country: parsed.country ?? '',
+      isDefault: true,
+    };
+  }
+  return {
+    id: '', userId: '', fullName: '', street: '', city: '', state: '', postalCode: '', country: '', isDefault: true,
+  };
+};
+
+const mapOrder = (raw: any): Order => ({
+  id: raw.id ?? '',
+  orderNumber: raw.order_number ?? raw.orderNumber ?? '',
+  userId: raw.user_id ?? raw.userId ?? '',
+  customerName: raw.customer_name ?? raw.customerName ?? '',
+  customerEmail: raw.customer_email ?? raw.customerEmail ?? '',
+  items: Array.isArray(raw.items) ? raw.items.map(mapOrderItem) : [],
+  subtotal: Number(raw.subtotal ?? 0),
+  discount: Number(raw.discount ?? 0),
+  shipping: Number(raw.shipping ?? 0),
+  tax: Number(raw.tax ?? 0),
+  total: Number(raw.total ?? raw.total_price ?? 0),
+  status: raw.status ?? 'PROCESSING',
+  paymentStatus: raw.payment_status ?? raw.paymentStatus ?? 'PENDING',
+  paymentMethod: raw.payment_method ?? raw.paymentMethod ?? 'Stripe Test Card (•••• 4242)',
+  stripePaymentIntentId: raw.stripe_payment_intent_id ?? raw.stripePaymentIntentId,
+  shippingAddress: parseShippingAddress(raw.shipping_address ?? raw.shippingAddress),
+  trackingNumber: raw.tracking_number ?? raw.trackingNumber,
+  shippingCarrier: raw.shipping_carrier ?? raw.shippingCarrier,
+  notes: raw.notes,
+  createdAt: raw.created_at ?? raw.createdAt ?? new Date().toISOString(),
+  updatedAt: raw.updated_at ?? raw.updatedAt ?? raw.created_at ?? new Date().toISOString(),
+});
 
 export const OrdersPage: React.FC = () => {
-  const { currentUser, navigate } = useStore();
+  const { navigate } = useStore();
   const { t, language } = useTranslation();
-  const orders = db.getOrders(currentUser.role === 'ADMIN' ? undefined : currentUser.id);
+
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadOrders = () => {
+    setLoading(true);
+    setLoadError(null);
+    fetchOrders()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setOrders(list.map(mapOrder));
+      })
+      .catch((e) => {
+        setLoadError(e instanceof Error ? e.message : 'Unable to load orders');
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    fetchOrders()
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setOrders(list.map(mapOrder));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadError(e instanceof Error ? e.message : 'Unable to load orders');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const getLocalizedStatus = (status: string) => {
     if (language !== 'ar') return status;
@@ -44,7 +154,33 @@ export const OrdersPage: React.FC = () => {
         </div>
       </div>
 
-      {orders.length === 0 ? (
+      {loading ? (
+        <div className="py-24 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[#C9A961]" />
+        </div>
+      ) : loadError ? (
+        <div className="p-12 text-center rounded-xl bg-[#171A1F] border border-[#242831] space-y-4">
+          <Package className="w-12 h-12 text-[#9CA3AF] mx-auto opacity-50" />
+          <h3 className="text-base font-semibold text-[#F5F5F5]">{t.orders.title}</h3>
+          <p className="text-xs text-[#9CA3AF] max-w-sm mx-auto">
+            {loadError}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={loadOrders}
+              className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              {language === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
+            </button>
+            <button
+              onClick={() => navigate('shop')}
+              className="px-6 py-2.5 rounded bg-[#171A1F] border border-[#242831] hover:border-[#C9A961] text-[#F5F5F5] text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              {t.home.exploreFullCatalog}
+            </button>
+          </div>
+        </div>
+      ) : orders.length === 0 ? (
         <div className="p-12 text-center rounded-xl bg-[#171A1F] border border-[#242831] space-y-4">
           <Package className="w-12 h-12 text-[#9CA3AF] mx-auto opacity-50" />
           <h3 className="text-base font-semibold text-[#F5F5F5]">{t.orders.noOrdersTitle}</h3>
@@ -145,3 +281,5 @@ export const OrdersPage: React.FC = () => {
     </div>
   );
 };
+
+export default OrdersPage;

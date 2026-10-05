@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
-import { ProductVariant } from '../types';
+import { fetchProductBySlug, fetchRelatedProducts, ApiProduct } from '../lib/api';
+import { Product, ProductVariant } from '../types';
 import { ProductCard } from '../components/store/ProductCard';
 import {
   Shield,
@@ -13,17 +13,95 @@ import {
   Check,
   Award,
   ArrowLeft,
+  Loader2,
 } from 'lucide-react';
 
 export const ProductDetailPage: React.FC = () => {
   const { routeParams, navigate, addToCart, toggleWishlist, isInWishlist } = useStore();
   const { t, language, getCategoryName } = useTranslation();
   const slug = routeParams.slug;
-  const product = db.getProductBySlug(slug || '');
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [quantity, setQuantity] = useState(1);
+
+  const requestIdRef = useRef(0);
+
+  const loadProduct = (slugToLoad: string | undefined) => {
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    setLoadError(null);
+    setProduct(null);
+    setRelatedProducts([]);
+    setActiveImageIndex(0);
+    setSelectedVariant(undefined);
+    setQuantity(1);
+
+    if (!slugToLoad) {
+      setLoading(false);
+      return;
+    }
+
+    fetchProductBySlug(slugToLoad)
+      .then((data: ApiProduct) => {
+        if (requestIdRef.current !== requestId) return;
+        setProduct(data as Product);
+        return fetchRelatedProducts(data.slug).then((related: ApiProduct[]) => {
+          if (requestIdRef.current !== requestId) return;
+          setRelatedProducts(related as Product[]);
+        });
+      })
+      .catch((e) => {
+        if (requestIdRef.current !== requestId) return;
+        setLoadError(e instanceof Error ? e.message : 'Unable to load product');
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    loadProduct(slug);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#C9A961]" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4">
+        <h2 className="font-serif-luxury text-2xl font-bold text-[#F5F5F5]">{t.product.notFoundTitle}</h2>
+        <p className="text-xs text-[#9CA3AF]">
+          {loadError}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button
+            onClick={() => loadProduct(slug)}
+            className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] font-semibold text-xs uppercase cursor-pointer"
+          >
+            {language === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
+          </button>
+          <button
+            onClick={() => navigate('shop')}
+            className="px-6 py-2.5 rounded bg-[#171A1F] border border-[#242831] text-[#F5F5F5] font-semibold text-xs uppercase cursor-pointer"
+          >
+            {t.product.returnCollection}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -46,7 +124,6 @@ export const ProductDetailPage: React.FC = () => {
   const currentPrice = currentVariant ? currentVariant.price : product.price;
   const currentStock = currentVariant ? currentVariant.stock : product.stock;
   const isWishlisted = isInWishlist(product.id);
-  const relatedProducts = db.getRelatedProducts(product, 4);
 
   const handleAddToCart = () => {
     addToCart(product, quantity, currentVariant);
@@ -319,3 +396,5 @@ export const ProductDetailPage: React.FC = () => {
     </div>
   );
 };
+
+export default ProductDetailPage;

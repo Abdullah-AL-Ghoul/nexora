@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
-import { auth, googleProvider, firestore } from '../lib/firebase';
+import { fetchCurrentUser } from '../lib/api';
+import { auth, googleProvider } from '../lib/firebase';
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import {
   Lock,
   Mail,
@@ -18,7 +17,16 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
+
+type PersonaRole = 'CUSTOMER' | 'MANAGER' | 'ADMIN';
+
+interface ServerUser {
+  role: PersonaRole;
+  name: string;
+}
 
 export const LoginPage: React.FC = () => {
   const { switchRole, navigate, addToast } = useStore();
@@ -31,6 +39,28 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Role is decided SERVER-SIDE only. After auth success we ask the server for
+  // the canonical role (it upserts the Firebase user from the Bearer token).
+  const resolveServerUser = async (): Promise<ServerUser | null> => {
+    try {
+      const u = await fetchCurrentUser();
+      const role = u.role as PersonaRole;
+      switchRole(role);
+      return { role, name: u.name };
+    } catch {
+      // Server authorization unavailable — keep the guest customer persona.
+      switchRole('CUSTOMER');
+      addToast({
+        type: 'info',
+        title: language === 'ar' ? 'جلسة ضيف' : 'Guest Session',
+        message: language === 'ar'
+          ? 'تم الدخول كضيف — تعذّر التحقق من الصلاحيات عبر الخادم.'
+          : 'Browsing as guest — server authorization unavailable.',
+      });
+      return null;
+    }
+  };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -39,41 +69,23 @@ export const LoginPage: React.FC = () => {
     try {
       if (isSignUp) {
         // Create account with Firebase Auth
-        let firebaseUser;
         try {
           const cred = await createUserWithEmailAndPassword(auth, email, password);
-          firebaseUser = cred.user;
           if (fullName) {
-            await updateProfile(firebaseUser, { displayName: fullName });
+            await updateProfile(cred.user, { displayName: fullName });
           }
         } catch (firebaseErr: any) {
           console.warn('Firebase Auth fallback:', firebaseErr);
         }
 
-        const role = email.includes('admin') ? 'ADMIN' : 'CUSTOMER';
-        const user = db.registerUser(fullName || email.split('@')[0], email, role);
-        switchRole(user.role);
-
-        // Record in Firestore if available
-        if (firebaseUser) {
-          try {
-            await setDoc(doc(firestore, 'users', firebaseUser.uid), {
-              uid: firebaseUser.uid,
-              email,
-              displayName: fullName || email.split('@')[0],
-              role,
-              createdAt: new Date().toISOString(),
-            });
-          } catch (e) {
-            console.error('Firestore write error', e);
-          }
+        const serverUser = await resolveServerUser();
+        if (serverUser) {
+          addToast({
+            type: 'success',
+            title: language === 'ar' ? 'تم إنشاء الحساب بنجاح' : 'Account Created',
+            message: language === 'ar' ? `مرحباً بك في نكسورا، ${fullName || email}.` : `Welcome to NEXORA, ${fullName || email}.`,
+          });
         }
-
-        addToast({
-          type: 'success',
-          title: language === 'ar' ? 'تم إنشاء الحساب بنجاح' : 'Account Created',
-          message: language === 'ar' ? `مرحباً بك في نكسورا، ${fullName || email}.` : `Welcome to NEXORA, ${fullName || email}.`,
-        });
         navigate('home');
       } else {
         // Sign In with Firebase Auth
@@ -83,20 +95,15 @@ export const LoginPage: React.FC = () => {
           console.warn('Firebase Auth sign in fallback:', firebaseErr);
         }
 
-        const role = email.includes('admin')
-          ? 'ADMIN'
-          : email.includes('manager')
-          ? 'MANAGER'
-          : 'CUSTOMER';
-        const user = db.registerUser(fullName || email.split('@')[0], email, role);
-        switchRole(user.role);
-
-        addToast({
-          type: 'success',
-          title: language === 'ar' ? 'تم تسجيل الدخول بنجاح' : 'Authentication Successful',
-          message: language === 'ar' ? `تم الدخول باسم ${user.name}.` : `Signed in as ${user.name}.`,
-        });
-        if (role === 'ADMIN' || role === 'MANAGER') {
+        const serverUser = await resolveServerUser();
+        if (serverUser) {
+          addToast({
+            type: 'success',
+            title: language === 'ar' ? 'تم تسجيل الدخول بنجاح' : 'Authentication Successful',
+            message: language === 'ar' ? `تم الدخول باسم ${serverUser.name}.` : `Signed in as ${serverUser.name}.`,
+          });
+        }
+        if (serverUser?.role === 'ADMIN' || serverUser?.role === 'MANAGER') {
           navigate('admin-dashboard');
         } else {
           navigate('home');
@@ -120,38 +127,15 @@ export const LoginPage: React.FC = () => {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
 
-      let role: 'CUSTOMER' | 'ADMIN' = 'CUSTOMER';
-      if (user.email === 'ynab2025@gmail.com' || user.email?.includes('admin')) {
-        role = 'ADMIN';
+      const serverUser = await resolveServerUser();
+      if (serverUser) {
+        addToast({
+          type: 'success',
+          title: language === 'ar' ? 'تم الدخول عبر Google' : 'Authenticated with Google',
+          message: language === 'ar' ? `أهلاً بك، ${user.displayName || user.email}.` : `Welcome, ${user.displayName || user.email}.`,
+        });
       }
-
-      db.registerUser(user.displayName || 'Distinguished Collector', user.email || '', role);
-      switchRole(role);
-
-      // Sync Firestore
-      try {
-        await setDoc(
-          doc(firestore, 'users', user.uid),
-          {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName || 'Distinguished Collector',
-            photoURL: user.photoURL || '',
-            role,
-            lastLogin: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      } catch (fsErr) {
-        console.warn('Firestore sync note:', fsErr);
-      }
-
-      addToast({
-        type: 'success',
-        title: language === 'ar' ? 'تم الدخول عبر Google' : 'Authenticated with Google',
-        message: language === 'ar' ? `أهلاً بك، ${user.displayName || user.email}.` : `Welcome, ${user.displayName || user.email}.`,
-      });
-      if (role === 'ADMIN') {
+      if (serverUser?.role === 'ADMIN' || serverUser?.role === 'MANAGER') {
         navigate('admin-dashboard');
       } else {
         navigate('home');
@@ -166,6 +150,12 @@ export const LoginPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const personas: { role: PersonaRole; label: string }[] = [
+    { role: 'CUSTOMER', label: language === 'ar' ? 'عميل' : 'Customer' },
+    { role: 'MANAGER', label: language === 'ar' ? 'مدير' : 'Manager' },
+    { role: 'ADMIN', label: language === 'ar' ? 'مسؤول' : 'Admin' },
+  ];
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-16 bg-[#0F1113]">
@@ -307,8 +297,43 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Demo Persona Selector (local-only preview role, real privileges come from the server) */}
+        <div className="p-6 rounded-2xl bg-[#171A1F] border border-[#242831] shadow-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#C9A961] shrink-0" />
+            <h3 className="font-serif-luxury text-sm font-semibold text-[#F5F5F5]">
+              {language === 'ar' ? 'دخول تجريبي' : 'Demo Access'}
+            </h3>
+          </div>
+          <p className="text-[11px] text-[#9CA3AF] leading-relaxed">
+            {language === 'ar'
+              ? 'جرّب واجهة مختلفة (مدير / مسؤول) مباشرة دون الحاجة إلى تسجيل الدخول.'
+              : 'Preview the Manager or Admin experience instantly, no sign-in required.'}
+          </p>
+          <div className="flex gap-2">
+            {personas.map((p) => (
+              <button
+                key={p.role}
+                type="button"
+                onClick={() => switchRole(p.role)}
+                disabled={loading}
+                className="flex-1 py-2.5 px-3 rounded-lg bg-[#121418] hover:bg-[#1E2229] border border-[#242831] hover:border-[#C9A961] text-[#F5F5F5] hover:text-[#F5F5F5] font-semibold text-[11px] tracking-wider transition-all duration-200 cursor-pointer disabled:opacity-50"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-[#9CA3AF] flex items-start gap-1.5 leading-relaxed">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#9CA3AF]" />
+            <span>
+              {language === 'ar'
+                ? 'الدور التجريبي محلي فقط — تتطلب إجراءات الكتابة (المسؤول/المدير) تفويضاً حقيقياً من الخادم.'
+                : 'Demo persona is local only — admin/manager write actions require real server authorization.'}
+            </span>
+          </p>
+        </div>
       </div>
     </div>
   );
 };
-

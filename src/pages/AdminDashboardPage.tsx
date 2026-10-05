@@ -1,8 +1,25 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
-import { Product, Order, Review, Category, Role } from '../types';
+import { Category } from '../types';
+import {
+  ApiProduct,
+  ApiCategory,
+  fetchAnalytics,
+  fetchAllProducts,
+  fetchCategories,
+  fetchOrders,
+  fetchInventoryTransactions,
+  saveProduct,
+  deleteProduct,
+  saveCategory,
+  deleteCategory,
+  updateOrderStatus,
+  deleteOrder,
+  adjustStock,
+  errorMessage,
+} from '../lib/api';
+import { DEMO_USERS } from '../store/useStore';
 import {
   LayoutDashboard,
   Package,
@@ -26,7 +43,81 @@ import {
   Filter,
   ArrowUpDown,
   FolderPlus,
+  Loader2,
 } from 'lucide-react';
+
+const EMPTY_ANALYTICS = {
+  totalRevenue: 0,
+  revenueChangePercent: 0,
+  totalOrders: 0,
+  ordersChangePercent: 0,
+  averageOrderValue: 0,
+  lowStockCount: 0,
+  revenueByDay: [] as { date: string; amount: number }[],
+  salesByCategory: [] as { category: string; amount: number; percentage: number }[],
+};
+
+/** Map server category row (snake_case) → client-facing camelCase Category. */
+function mapCategory(c: ApiCategory): Category {
+  return {
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    description: c.description,
+    imageUrl: c.image_url,
+    itemCount: c.item_count,
+  };
+}
+
+interface OrderData {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  shippingAddress: unknown;
+}
+
+/** Map server order row (snake_case) → camelCase for the dashboard JSX. */
+function mapOrder(r: any): OrderData {
+  return {
+    id: r.id,
+    orderNumber: r.order_number,
+    customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    total: Number(r.total ?? 0),
+    status: r.status,
+    createdAt: r.created_at,
+    shippingAddress: r.shipping_address ?? {},
+  };
+}
+
+interface InventoryData {
+  id: string;
+  productName: string;
+  type: string;
+  quantity: number;
+  stockAfter: number;
+  reason: string;
+  performedBy: string;
+  createdAt: string;
+}
+
+/** Map server inventory transaction row (snake_case) → camelCase. */
+function mapInventoryTx(r: any): InventoryData {
+  return {
+    id: r.id,
+    productName: r.product_name,
+    type: r.type,
+    quantity: Number(r.quantity ?? 0),
+    stockAfter: Number(r.stock_after ?? 0),
+    reason: r.reason,
+    performedBy: r.performed_by,
+    createdAt: r.created_at,
+  };
+}
 
 export const AdminDashboardPage: React.FC = () => {
   const { currentUser, switchRole, addToast, navigate } = useStore();
@@ -36,17 +127,76 @@ export const AdminDashboardPage: React.FC = () => {
     'overview' | 'products' | 'categories' | 'orders' | 'inventory' | 'users'
   >('overview');
 
-  // Trigger state refreshes
-  const [, setTick] = useState(0);
-  const refresh = () => setTick((t) => t + 1);
+  // ── Async data state (server-backed) ────────────────────────────────────
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [rawProducts, setRawProducts] = useState<ApiProduct[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [rawOrders, setRawOrders] = useState<OrderData[]>([]);
+  const [inventoryTx, setInventoryTx] = useState<InventoryData[]>([]);
 
   // Search & Filter within dashboard
   const [productSearch, setProductSearch] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
 
+  // ── Data loaders ────────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [ana, prods, cats, ordrs, tx] = await Promise.all([
+        fetchAnalytics(),
+        fetchAllProducts(),
+        fetchCategories(),
+        fetchOrders(),
+        fetchInventoryTransactions(),
+      ]);
+      setAnalyticsData(ana);
+      setRawProducts(prods);
+      setCategories(cats.map(mapCategory));
+      setRawOrders(ordrs.map(mapOrder));
+      setInventoryTx(tx.map(mapInventoryTx));
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Failed to load dashboard data.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Reload all lists after a mutation (never throws — reload failures surface
+  // via the error banner instead of breaking the mutation flow).
+  const refresh = useCallback(async () => {
+    try {
+      const [ana, prods, cats, ordrs, tx] = await Promise.all([
+        fetchAnalytics(),
+        fetchAllProducts(),
+        fetchCategories(),
+        fetchOrders(),
+        fetchInventoryTransactions(),
+      ]);
+      setAnalyticsData(ana);
+      setRawProducts(prods);
+      setCategories(cats.map(mapCategory));
+      setRawOrders(ordrs.map(mapOrder));
+      setInventoryTx(tx.map(mapInventoryTx));
+      setLoadError('');
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Failed to refresh dashboard data.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser.role !== 'ADMIN') {
+      setLoading(false);
+      return;
+    }
+    void loadAll();
+  }, [currentUser.role, loadAll]);
+
   // Modal states for Product Add/Edit
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ApiProduct | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
     slug: '',
@@ -73,7 +223,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   // Inventory adjustment modal
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
-  const [selectedProductForStock, setSelectedProductForStock] = useState<Product | null>(null);
+  const [selectedProductForStock, setSelectedProductForStock] = useState<ApiProduct | null>(null);
   const [stockDelta, setStockDelta] = useState(5);
   const [stockReason, setStockReason] = useState('Artisanal workshop replenishment');
 
@@ -114,12 +264,8 @@ export const AdminDashboardPage: React.FC = () => {
   }
 
   const isSuperAdmin = currentUser.role === 'ADMIN';
-  const analytics = db.getAnalytics();
-  const rawProducts = db.getProducts({ sortBy: 'newest' });
-  const categories = db.getCategories();
-  const rawOrders = db.getOrders();
-  const reviews = db.getAllReviews();
-  const inventoryTx = db.getInventoryTransactions();
+  const analytics = analyticsData ?? EMPTY_ANALYTICS;
+  const users = Object.values(DEMO_USERS);
 
   // Filter products by search
   const filteredProducts = rawProducts.filter(
@@ -156,7 +302,7 @@ export const AdminDashboardPage: React.FC = () => {
     setIsProductModalOpen(true);
   };
 
-  const handleOpenEditProduct = (prod: Product) => {
+  const handleOpenEditProduct = (prod: ApiProduct) => {
     try {
       setEditingProduct(prod);
       const materialsStr = Array.isArray(prod.materials)
@@ -194,14 +340,14 @@ export const AdminDashboardPage: React.FC = () => {
     }
   };
 
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const materialsList = typeof productForm.materials === 'string'
         ? productForm.materials.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      db.saveProduct({
+      await saveProduct({
         id: editingProduct?.id,
         name: productForm.name.trim(),
         slug: productForm.slug?.trim() || productForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -225,7 +371,7 @@ export const AdminDashboardPage: React.FC = () => {
       });
 
       setIsProductModalOpen(false);
-      refresh();
+      await refresh();
       addToast({
         type: 'success',
         title: language === 'ar'
@@ -233,49 +379,73 @@ export const AdminDashboardPage: React.FC = () => {
           : (editingProduct ? 'Product Updated' : 'Product Added'),
         message: `${productForm.name} ${language === 'ar' ? 'تم حفظ التعديلات في النظام.' : 'saved successfully.'}`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error saving product:', err);
       addToast({
         type: 'error',
         title: language === 'ar' ? 'خطأ في حفظ المنتج' : 'Save Failed',
-        message: err?.message || 'Could not save product',
+        message: errorMessage(err, 'Could not save product'),
       });
     }
   };
 
-  const handleDeleteProduct = (id: string, name: string) => {
+  const handleDeleteProduct = async (id: string, name: string) => {
     if (confirm(`Are you certain you wish to delete "${name}" from the catalog?`)) {
-      db.deleteProduct(id);
-      refresh();
+      try {
+        await deleteProduct(id);
+        await refresh();
+        addToast({
+          type: 'info',
+          title: 'Product Deleted',
+          message: `${name} has been removed from the registry.`,
+        });
+      } catch (err) {
+        addToast({
+          type: 'error',
+          title: 'Delete Failed',
+          message: errorMessage(err, `Could not delete "${name}".`),
+        });
+      }
+    }
+  };
+
+  const handleQuickStockChange = async (productId: string, delta: number) => {
+    try {
+      await adjustStock(productId, delta, 'Quick dashboard stock modification');
+      await refresh();
       addToast({
-        type: 'info',
-        title: 'Product Deleted',
-        message: `${name} has been removed from the registry.`,
+        type: 'success',
+        title: 'Stock Updated',
+        message: `Stock adjusted by ${delta > 0 ? '+' : ''}${delta}.`,
+      });
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Stock Update Failed',
+        message: errorMessage(err, 'Could not adjust stock.'),
       });
     }
   };
 
-  const handleQuickStockChange = (productId: string, delta: number) => {
-    db.adjustStock(productId, delta, 'Quick dashboard stock modification');
-    refresh();
-    addToast({
-      type: 'success',
-      title: 'Stock Updated',
-      message: `Stock adjusted by ${delta > 0 ? '+' : ''}${delta}.`,
-    });
-  };
-
-  const handleAdjustStockModal = (e: React.FormEvent) => {
+  const handleAdjustStockModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductForStock) return;
-    db.adjustStock(selectedProductForStock.id, stockDelta, stockReason);
-    setIsStockModalOpen(false);
-    refresh();
-    addToast({
-      type: 'success',
-      title: 'Stock Ledger Updated',
-      message: `${selectedProductForStock.name} inventory changed by ${stockDelta > 0 ? '+' : ''}${stockDelta}.`,
-    });
+    try {
+      await adjustStock(selectedProductForStock.id, stockDelta, stockReason);
+      setIsStockModalOpen(false);
+      await refresh();
+      addToast({
+        type: 'success',
+        title: 'Stock Ledger Updated',
+        message: `${selectedProductForStock.name} inventory changed by ${stockDelta > 0 ? '+' : ''}${stockDelta}.`,
+      });
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Stock Adjustment Failed',
+        message: errorMessage(err, 'Could not adjust inventory.'),
+      });
+    }
   };
 
   // --- Handlers: Categories ---
@@ -301,73 +471,132 @@ export const AdminDashboardPage: React.FC = () => {
     setIsCategoryModalOpen(true);
   };
 
-  const handleSaveCategory = (e: React.FormEvent) => {
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.saveCategory({
-      id: editingCategory?.id,
-      name: categoryForm.name,
-      slug: categoryForm.slug || categoryForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      description: categoryForm.description,
-      imageUrl: categoryForm.imageUrl,
-    });
-    setIsCategoryModalOpen(false);
-    refresh();
-    addToast({
-      type: 'success',
-      title: editingCategory ? 'Category Updated' : 'Category Created',
-      message: `${categoryForm.name} saved.`,
-    });
+    try {
+      await saveCategory({
+        id: editingCategory?.id,
+        name: categoryForm.name,
+        slug: categoryForm.slug || categoryForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        description: categoryForm.description,
+        imageUrl: categoryForm.imageUrl,
+      });
+      setIsCategoryModalOpen(false);
+      await refresh();
+      addToast({
+        type: 'success',
+        title: editingCategory ? 'Category Updated' : 'Category Created',
+        message: `${categoryForm.name} saved.`,
+      });
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Save Failed',
+        message: errorMessage(err, `Could not save category "${categoryForm.name}".`),
+      });
+    }
   };
 
-  const handleDeleteCategory = (id: string, name: string) => {
+  const handleDeleteCategory = async (id: string, name: string) => {
     if (confirm(`Delete atelier "${name}"?`)) {
-      db.deleteCategory(id);
-      refresh();
-      addToast({
-        type: 'info',
-        title: 'Category Removed',
-        message: `${name} has been deleted.`,
-      });
+      try {
+        await deleteCategory(id);
+        await refresh();
+        addToast({
+          type: 'info',
+          title: 'Category Removed',
+          message: `${name} has been deleted.`,
+        });
+      } catch (err) {
+        addToast({
+          type: 'error',
+          title: 'Delete Failed',
+          message: errorMessage(err, `Could not delete category "${name}".`),
+        });
+      }
     }
   };
 
   // --- Handlers: Orders ---
-  const handleUpdateOrderStatus = (orderId: string, status: Order['status']) => {
-    db.updateOrderStatus(orderId, status);
-    refresh();
-    addToast({
-      type: 'success',
-      title: 'Order Status Changed',
-      message: `Order transitioned to status: ${status}`,
-    });
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      await updateOrderStatus(orderId, status);
+      await refresh();
+      addToast({
+        type: 'success',
+        title: 'Order Status Changed',
+        message: `Order transitioned to status: ${status}`,
+      });
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Status Change Failed',
+        message: errorMessage(err, 'Could not update order status.'),
+      });
+    }
   };
 
-  const handleDeleteOrder = (orderId: string, orderNumber: string) => {
+  const handleDeleteOrder = async (orderId: string, orderNumber: string) => {
     if (confirm(`Delete order ${orderNumber}? This will remove it from the ledger.`)) {
-      db.deleteOrder(orderId);
-      refresh();
-      addToast({
-        type: 'info',
-        title: 'Order Deleted',
-        message: `Order ${orderNumber} removed from ledger.`,
-      });
+      try {
+        await deleteOrder(orderId);
+        await refresh();
+        addToast({
+          type: 'info',
+          title: 'Order Deleted',
+          message: `Order ${orderNumber} removed from ledger.`,
+        });
+      } catch (err) {
+        addToast({
+          type: 'error',
+          title: 'Delete Failed',
+          message: errorMessage(err, `Could not delete order ${orderNumber}.`),
+        });
+      }
     }
   };
 
   const handleResetData = () => {
-    if (confirm('Reset database to clean initial demo state? All local edits will revert to default.')) {
-      db.resetToDemoState();
-      refresh();
-      addToast({
-        type: 'info',
-        title: 'Demo Database Restored',
-        message: 'Reverted to pristine seed records.',
-      });
-    }
+    // Server-owned data: no destructive local reset. Reseeding is available via POST /api/seed.
+    addToast({
+      type: 'info',
+      title: 'Demo Data Reset',
+      message: language === 'ar'
+        ? 'إعادة التعيين متاحة عبر إعادة البذر على الخادم (POST /api/seed) — لم يتم تنفيذ أي عملية حذف.'
+        : 'Reset available via server reseed (POST /api/seed) — no destructive action performed.',
+    });
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-8 h-8 animate-spin text-[#C9A961]" />
+        </div>
+      )}
+
+      {/* Initial load error banner with retry */}
+      {loadError && (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-rose-300">
+                {language === 'ar' ? 'تعذر تحميل بيانات لوحة التحكم' : 'Failed to load dashboard data'}
+              </p>
+              <p className="text-xs text-rose-200/80 mt-1">{loadError}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => loadAll()}
+            className="shrink-0 px-4 py-2 rounded bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs font-semibold uppercase tracking-wider hover:bg-rose-500/30 transition-colors cursor-pointer"
+          >
+            {language === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+          </button>
+        </div>
+      )}
+
       {/* Top Banner & Persona Badge */}
       <div className="p-6 rounded-xl bg-[#171A1F] border border-[#242831] flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -540,7 +769,7 @@ export const AdminDashboardPage: React.FC = () => {
               </div>
 
               <div className="h-48 flex items-end gap-3 sm:gap-6 pt-4 border-b border-[#242831]">
-                {analytics.revenueByDay.map((day) => {
+                {analytics.revenueByDay.map((day: { date: string; amount: number }) => {
                   const maxAmount = 10000;
                   const heightPercent = Math.min(100, Math.round((day.amount / maxAmount) * 100));
                   return (
@@ -566,7 +795,7 @@ export const AdminDashboardPage: React.FC = () => {
               </h3>
 
               <div className="space-y-3 pt-2">
-                {analytics.salesByCategory.map((cat) => (
+                {analytics.salesByCategory.map((cat: { category: string; amount: number; percentage: number }) => (
                   <div key={cat.category} className="space-y-1 text-xs">
                     <div className="flex justify-between text-[#F5F5F5]">
                       <span>{cat.category}</span>
@@ -864,7 +1093,7 @@ export const AdminDashboardPage: React.FC = () => {
                       <td className="p-4">
                         <select
                           value={o.status}
-                          onChange={(e) => handleUpdateOrderStatus(o.id, e.target.value as any)}
+                          onChange={(e) => handleUpdateOrderStatus(o.id, e.target.value)}
                           className="bg-[#121418] border border-[#242831] rounded px-2.5 py-1 text-xs text-[#F5F5F5] outline-none focus:border-[#C9A961]"
                         >
                           <option value="PAID">PAID</option>
@@ -1009,7 +1238,7 @@ export const AdminDashboardPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#242831] text-[#F5F5F5]">
-                {db.getAllUsers().map((u) => (
+                {users.map((u) => (
                   <tr key={u.id} className="hover:bg-[#1E2229]/60 transition-colors">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
@@ -1395,3 +1624,5 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 };
+
+export default AdminDashboardPage;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
+import { createOrder } from '../lib/api';
 import {
   ShieldCheck,
   CreditCard,
@@ -87,9 +87,10 @@ export const CheckoutPage: React.FC = () => {
       return;
     }
 
-    // Call server/database atomic checkout
-    setTimeout(() => {
-      const orderResult = db.createOrder({
+    // Server-side atomic checkout (createOrder posts to /api/orders;
+    // the server owns stock/order validation and reads the applied coupon).
+    try {
+      const order = await createOrder({
         items: cart.map((i) => ({
           productId: i.productId,
           variantId: i.variantId,
@@ -107,22 +108,28 @@ export const CheckoutPage: React.FC = () => {
         paymentMethod: `Stripe Test Card (${cardNumber.slice(-9)})`,
       });
 
+      clearCart();
+      addToast({
+        type: 'success',
+        title: language === 'ar' ? 'تم تأكيد الطلب بنجاح' : 'Order Confirmed',
+        message: language === 'ar'
+          ? `تم تسجيل طلبك رقم ${order.orderNumber} في السجل الرسمي بنجاح.`
+          : `Order ${order.orderNumber} successfully processed via Stripe Test Mode.`,
+      });
+      navigate('order-success', { orderId: order.id });
+    } catch (err) {
+      const msg = err instanceof Error
+        ? err.message
+        : (language === 'ar' ? 'فشل معالجة الطلب. يرجى مراجعة المخزون.' : 'Failed to process order. Please check inventory.');
+      setErrorMessage(msg);
+      addToast({
+        type: 'error',
+        title: language === 'ar' ? 'فشل معالجة الطلب' : 'Order Failed',
+        message: msg,
+      });
+    } finally {
       setIsProcessing(false);
-
-      if (orderResult.success && orderResult.order) {
-        clearCart();
-        addToast({
-          type: 'success',
-          title: language === 'ar' ? 'تم تأكيد الطلب بنجاح' : 'Order Confirmed',
-          message: language === 'ar'
-            ? `تم تسجيل طلبك رقم ${orderResult.order.orderNumber} في السجل الرسمي بنجاح.`
-            : `Order ${orderResult.order.orderNumber} successfully processed via Stripe Test Mode.`,
-        });
-        navigate('order-success', { orderId: orderResult.order.id });
-      } else {
-        setErrorMessage(orderResult.error || (language === 'ar' ? 'فشل معالجة الطلب. يرجى مراجعة المخزون.' : 'Failed to process order. Please check inventory.'));
-      }
-    }, 1200);
+    }
   };
 
   return (

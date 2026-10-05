@@ -158,6 +158,7 @@ export interface Translations {
     subtitle: string;
     exploreAtelier: string;
     artifactsCount: string;
+    errorLoading: string;
   };
   // About Page
   about: {
@@ -409,6 +410,7 @@ export const translations: Record<Language, Translations> = {
       subtitle: 'استكشف بيوت الحرفة المتخصصة في صياغة أدوات الحياة الفاخرة.',
       exploreAtelier: 'استعراض مقتنيات القسم',
       artifactsCount: 'قطع معتمدة',
+      errorLoading: 'تعذّر تحميل الأقسام',
     },
     about: {
       title: 'فلسفة نكسورا وتراث الإتقان',
@@ -652,6 +654,7 @@ export const translations: Record<Language, Translations> = {
       subtitle: 'Explore our eight independent workshops dedicated to permanent, tactile masterworks.',
       exploreAtelier: 'Explore Atelier Collection',
       artifactsCount: 'Commissioned Artifacts',
+      errorLoading: 'Unable to load ateliers',
     },
     about: {
       title: 'The Philosophy of Permanence',

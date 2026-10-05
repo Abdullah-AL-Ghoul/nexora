@@ -1,12 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Product, ProductVariant, CartItem, WishlistItem, Coupon, User, Role } from '../types';
-import { db } from '../lib/db';
-import {
-  syncWishlistToFirestore,
-  ensureAuthenticatedUserId,
-  loadWishlistFromFirestore,
-} from '../lib/firebase';
+import { push } from '../lib/routerBridge';
+import { validateCoupon as apiValidateCoupon } from '../lib/api';
+import { calculateDiscount, calculateShipping, calculateTax } from '../lib/pricing';
 
 export interface ToastMessage {
   id: string;
@@ -14,6 +11,21 @@ export interface ToastMessage {
   title: string;
   message?: string;
 }
+
+export const DEMO_USERS: Record<Role, User> = {
+  CUSTOMER: {
+    id: 'user_customer_01', email: 'customer@nexora.com', name: 'Alexander Hayes', role: 'CUSTOMER',
+    createdAt: '2026-02-14T14:20:00Z',
+  },
+  MANAGER: {
+    id: 'user_manager_01', email: 'manager@nexora.com', name: 'Elena Rostova', role: 'MANAGER',
+    createdAt: '2026-02-01T11:30:00Z',
+  },
+  ADMIN: {
+    id: 'user_admin_01', email: 'admin@nexora.com', name: 'Julian Vance', role: 'ADMIN',
+    createdAt: '2026-01-15T09:00:00Z',
+  },
+};
 
 interface AppStore {
   // Navigation
@@ -39,7 +51,7 @@ interface AppStore {
   updateQuantity: (cartItemId: string, delta: number) => void;
   removeFromCart: (cartItemId: string) => void;
   clearCart: () => void;
-  applyCoupon: (code: string) => boolean;
+  applyCoupon: (code: string) => Promise<boolean>;
   removeCoupon: () => void;
   getCartSubtotal: () => number;
   getCartDiscount: () => number;
@@ -52,10 +64,10 @@ interface AppStore {
   wishlist: WishlistItem[];
   toggleWishlist: (product: Product) => void;
   isInWishlist: (productId: string) => boolean;
-  loadFirestoreWishlist: (userId?: string) => Promise<void>;
 
   // Auth & Roles
   currentUser: User;
+  setCurrentUser: (user: User) => void;
   switchRole: (role: Role) => void;
   logout: () => void;
 
@@ -86,12 +98,12 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // Navigation
+      // Navigation — routes through react-router (see routerBridge.ts)
       currentRoute: 'home',
       routeParams: {},
       navigate: (route, params = {}) => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         set({ currentRoute: route, routeParams: params });
+        push(route, params);
       },
 
       // Search & Filters
@@ -112,8 +124,6 @@ export const useStore = create<AppStore>()(
       addToCart: (product, quantity = 1, variant) => {
         const cart = get().cart;
         const availableStock = variant ? variant.stock : product.stock;
-
-        // Check if item already exists in bag
         const existingIndex = cart.findIndex(
           (item) => item.productId === product.id && item.variantId === variant?.id
         );
@@ -121,11 +131,7 @@ export const useStore = create<AppStore>()(
         if (existingIndex > -1) {
           const currentQty = cart[existingIndex].quantity;
           if (currentQty + quantity > availableStock) {
-            get().addToast({
-              type: 'error',
-              title: 'Stock Limit Reached',
-              message: `Only ${availableStock} units available for this selection.`,
-            });
+            get().addToast({ type: 'error', title: 'Stock Limit Reached', message: `Only ${availableStock} units available for this selection.` });
             return;
           }
           const updatedCart = [...cart];
@@ -133,129 +139,87 @@ export const useStore = create<AppStore>()(
           set({ cart: updatedCart });
         } else {
           if (quantity > availableStock) {
-            get().addToast({
-              type: 'error',
-              title: 'Stock Limit Reached',
-              message: `Only ${availableStock} units available for this selection.`,
-            });
+            get().addToast({ type: 'error', title: 'Stock Limit Reached', message: `Only ${availableStock} units available for this selection.` });
             return;
           }
-
           const price = variant ? variant.price : product.price;
           const newItem: CartItem = {
             id: `ci_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            productId: product.id,
-            product,
-            variantId: variant?.id,
-            variant,
-            quantity,
-            price,
+            productId: product.id, product, variantId: variant?.id, variant, quantity, price,
           };
           set({ cart: [newItem, ...cart] });
         }
 
-        get().addToast({
-          type: 'success',
-          title: 'Added to Bag',
-          message: `${product.name} ${variant ? `(${variant.name})` : ''} added.`,
-        });
+        get().addToast({ type: 'success', title: 'Added to Bag', message: `${product.name} ${variant ? `(${variant.name})` : ''} added.` });
       },
 
       updateQuantity: (cartItemId, delta) => {
         const cart = get().cart;
         const item = cart.find((i) => i.id === cartItemId);
         if (!item) return;
-
         const maxStock = item.variant ? item.variant.stock : item.product.stock;
         const newQty = item.quantity + delta;
-
-        if (newQty <= 0) {
-          get().removeFromCart(cartItemId);
-          return;
-        }
-
+        if (newQty <= 0) { get().removeFromCart(cartItemId); return; }
         if (newQty > maxStock) {
-          get().addToast({
-            type: 'error',
-            title: 'Max Stock Exceeded',
-            message: `Only ${maxStock} units currently available.`,
-          });
+          get().addToast({ type: 'error', title: 'Max Stock Exceeded', message: `Only ${maxStock} units currently available.` });
           return;
         }
-
-        const updated = cart.map((i) => (i.id === cartItemId ? { ...i, quantity: newQty } : i));
-        set({ cart: updated });
+        set({ cart: cart.map((i) => (i.id === cartItemId ? { ...i, quantity: newQty } : i)) });
       },
 
       removeFromCart: (cartItemId) => {
         const item = get().cart.find((i) => i.id === cartItemId);
         set({ cart: get().cart.filter((i) => i.id !== cartItemId) });
-        if (item) {
-          get().addToast({
-            type: 'info',
-            title: 'Item Removed',
-            message: `${item.product.name} removed from your bag.`,
-          });
-        }
+        if (item) get().addToast({ type: 'info', title: 'Item Removed', message: `${item.product.name} removed from your bag.` });
       },
 
       clearCart: () => set({ cart: [], appliedCoupon: null, couponError: null }),
 
-      applyCoupon: (code) => {
+      applyCoupon: async (code) => {
         const subtotal = get().getCartSubtotal();
-        const result = db.validateCoupon(code, subtotal);
-        if (result.valid && result.coupon) {
-          set({ appliedCoupon: result.coupon, couponError: null });
-          get().addToast({
-            type: 'success',
-            title: 'Coupon Applied',
-            message: `${result.coupon.code}: ${result.coupon.description}`,
-          });
-          return true;
-        } else {
+        try {
+          const result = await apiValidateCoupon(code, subtotal);
+          if (result.valid && result.coupon) {
+            const c = result.coupon;
+            const coupon: Coupon = {
+              id: c.id, code: c.code, type: c.type, value: c.value,
+              startsAt: '', expiresAt: '', usageLimit: 0, usageCount: 0, isActive: true,
+              description: '',
+            };
+            set({ appliedCoupon: coupon, couponError: null });
+            get().addToast({ type: 'success', title: 'Coupon Applied', message: `${c.code}: ${typeof result.discount === 'number' ? `$${result.discount} off` : 'discount applied'}` });
+            return true;
+          }
           set({ couponError: result.error || 'Invalid code' });
-          get().addToast({
-            type: 'error',
-            title: 'Coupon Rejected',
-            message: result.error,
-          });
+          get().addToast({ type: 'error', title: 'Coupon Rejected', message: result.error });
+          return false;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Unable to validate coupon';
+          set({ couponError: msg });
+          get().addToast({ type: 'error', title: 'Coupon Rejected', message: msg });
           return false;
         }
       },
 
       removeCoupon: () => {
         set({ appliedCoupon: null, couponError: null });
-        get().addToast({
-          type: 'info',
-          title: 'Coupon Removed',
-          message: 'Promotional discount cleared.',
-        });
+        get().addToast({ type: 'info', title: 'Coupon Removed', message: 'Promotional discount cleared.' });
       },
 
-      getCartSubtotal: () => {
-        return get().cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      },
+      getCartSubtotal: () => get().cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
 
-      getCartDiscount: () => {
-        const subtotal = get().getCartSubtotal();
-        const coupon = get().appliedCoupon;
-        if (!coupon) return 0;
-        return db.calculateDiscount(coupon, subtotal);
-      },
+      getCartDiscount: () => calculateDiscount(get().appliedCoupon, get().getCartSubtotal()),
 
       getCartShipping: () => {
         const subtotal = get().getCartSubtotal();
         const discount = get().getCartDiscount();
-        const net = subtotal - discount;
-        if (net === 0) return 0;
-        return net >= 200 ? 0 : 25;
+        return calculateShipping(subtotal - discount);
       },
 
       getCartTax: () => {
         const subtotal = get().getCartSubtotal();
         const discount = get().getCartDiscount();
-        const net = Math.max(0, subtotal - discount);
-        return Math.round(net * 0.08 * 100) / 100;
+        return calculateTax(subtotal - discount);
       },
 
       getCartTotal: () => {
@@ -266,9 +230,7 @@ export const useStore = create<AppStore>()(
         return Math.max(0, Math.round((subtotal - discount + shipping + tax) * 100) / 100);
       },
 
-      getCartItemCount: () => {
-        return get().cart.reduce((sum, item) => sum + item.quantity, 0);
-      },
+      getCartItemCount: () => get().cart.reduce((sum, item) => sum + item.quantity, 0),
 
       // Wishlist
       wishlist: [],
@@ -276,114 +238,42 @@ export const useStore = create<AppStore>()(
         const wishlist = get().wishlist;
         const exists = wishlist.some((w) => w.productId === product.id);
         const lang = get().language;
-
         let updatedWishlist: WishlistItem[];
         if (exists) {
           updatedWishlist = wishlist.filter((w) => w.productId !== product.id);
-          set({ wishlist: updatedWishlist });
-          get().addToast({
-            type: 'info',
-            title: lang === 'ar' ? 'تم الحذف من المفضلة' : 'Removed from Wishlist',
-            message: `${product.name} ${lang === 'ar' ? 'أُزيل من قائمة المقتنيات.' : 'removed from your wishlist.'}`,
-          });
+          get().addToast({ type: 'info', title: lang === 'ar' ? 'تم الحذف من المفضلة' : 'Removed from Wishlist', message: `${product.name} ${lang === 'ar' ? 'أُزيل من قائمة المقتنيات.' : 'removed from your wishlist.'}` });
         } else {
-          const newItem: WishlistItem = {
-            id: `wl_${Date.now()}`,
-            productId: product.id,
-            product,
-            addedAt: new Date().toISOString(),
-          };
-          updatedWishlist = [newItem, ...wishlist];
-          set({ wishlist: updatedWishlist });
-          get().addToast({
-            type: 'success',
-            title: lang === 'ar' ? 'تم الحفظ في المفضلة' : 'Added to Wishlist',
-            message: `${product.name} ${lang === 'ar' ? 'حُفظ في المفضلة وتم التزامن مع Firestore.' : 'saved to your wishlist and synced to Firestore.'}`,
-          });
+          updatedWishlist = [{ id: `wl_${Date.now()}`, productId: product.id, product, addedAt: new Date().toISOString() }, ...wishlist];
+          get().addToast({ type: 'success', title: lang === 'ar' ? 'تم الحفظ في المفضلة' : 'Added to Wishlist', message: `${product.name} ${lang === 'ar' ? 'حُفظ في المفضلة.' : 'saved to your wishlist.'}` });
         }
-
-        // Asynchronously save state to user's document in Firestore
-        ensureAuthenticatedUserId()
-          .then((uid) => {
-            syncWishlistToFirestore(
-              uid,
-              updatedWishlist.map((w) => ({ productId: w.productId, addedAt: w.addedAt }))
-            );
-          })
-          .catch((err) => {
-            console.warn('Failed to sync wishlist to Firestore:', err);
-          });
+        set({ wishlist: updatedWishlist });
       },
 
-      isInWishlist: (productId) => {
-        return get().wishlist.some((w) => w.productId === productId);
-      },
-
-      loadFirestoreWishlist: async (userId?: string) => {
-        try {
-          const uid = userId || (await ensureAuthenticatedUserId());
-          const productIds = await loadWishlistFromFirestore(uid);
-          if (productIds && productIds.length > 0) {
-            const allProducts = db.getProducts({ sortBy: 'newest' });
-            const restoredItems: WishlistItem[] = productIds
-              .map((pid) => {
-                const prod = allProducts.find((p) => p.id === pid);
-                if (!prod) return null;
-                return {
-                  id: `wl_fs_${pid}`,
-                  productId: pid,
-                  product: prod,
-                  addedAt: new Date().toISOString(),
-                };
-              })
-              .filter(Boolean) as WishlistItem[];
-
-            if (restoredItems.length > 0) {
-              set({ wishlist: restoredItems });
-            }
-          }
-        } catch (err) {
-          console.warn('Failed to load wishlist from Firestore:', err);
-        }
-      },
+      isInWishlist: (productId) => get().wishlist.some((w) => w.productId === productId),
 
       // Auth & Roles
-      currentUser: db.getCurrentUser(),
+      currentUser: DEMO_USERS.CUSTOMER,
+      setCurrentUser: (user) => set({ currentUser: user }),
+
       switchRole: (role) => {
-        const user = db.switchRole(role);
-        set({ currentUser: user });
-        get().addToast({
-          type: 'info',
-          title: `Role Switched: ${role}`,
-          message: `Now operating with ${role.toLowerCase()} privileges as ${user.name}.`,
-        });
+        const demoUser = DEMO_USERS[role];
+        set({ currentUser: demoUser });
+        get().addToast({ type: 'info', title: `Role Switched: ${role}`, message: `Now operating with ${role.toLowerCase()} privileges as ${demoUser.name}.` });
       },
 
       logout: () => {
-        // Reset to customer
-        const cust = db.switchRole('CUSTOMER');
-        set({ currentUser: cust });
-        get().addToast({
-          type: 'info',
-          title: 'Signed Out',
-          message: 'Returned to standard customer browsing session.',
-        });
+        set({ currentUser: DEMO_USERS.CUSTOMER });
+        get().addToast({ type: 'info', title: 'Signed Out', message: 'Returned to standard customer browsing session.' });
       },
 
       // Toasts
       toasts: [],
       addToast: (toast) => {
         const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
-        const newToast: ToastMessage = { ...toast, id };
-        set((state) => ({ toasts: [...state.toasts, newToast] }));
-
-        setTimeout(() => {
-          get().removeToast(id);
-        }, 4000);
+        set((state) => ({ toasts: [...state.toasts, { ...toast, id }] }));
+        setTimeout(() => get().removeToast(id), 4000);
       },
-      removeToast: (id) => {
-        set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
-      },
+      removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
       // Quickview
       quickViewProduct: null,
@@ -395,6 +285,7 @@ export const useStore = create<AppStore>()(
         cart: state.cart,
         wishlist: state.wishlist,
         appliedCoupon: state.appliedCoupon,
+        currentUser: state.currentUser,
       }),
     }
   )

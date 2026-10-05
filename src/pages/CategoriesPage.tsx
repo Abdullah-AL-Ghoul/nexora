@@ -1,19 +1,55 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { db } from '../lib/db';
-import { ArrowRight } from 'lucide-react';
+import { fetchCategories } from '../lib/api';
+import { ArrowRight, Loader2, AlertTriangle } from 'lucide-react';
 
 export const CategoriesPage: React.FC = () => {
   const { navigate, setSelectedCategory } = useStore();
   const { t, language, localizeCategory } = useTranslation();
-  const rawCategories = db.getCategories();
-  const categories = rawCategories.map(localizeCategory);
+  const [raw, setRaw] = useState<any[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    setError(null);
+    setRaw(null);
+    try {
+      const cats = await fetchCategories();
+      setRaw(cats.map((c) => ({ ...c, imageUrl: c.image_url, itemCount: c.item_count })));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t.categories.errorLoading);
+    }
+  }, [t]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const categories = (raw ?? []).map(localizeCategory);
 
   const handleSelect = (slug: string) => {
     setSelectedCategory(slug);
     navigate('shop');
   };
+
+  if (error) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center px-6">
+        <AlertTriangle className="h-10 w-10 text-[#C9A961]" aria-hidden />
+        <h1 className="font-serif-luxury text-2xl text-[#F5F5F5]">{t.categories.errorLoading}</h1>
+        <p className="max-w-md text-sm text-[#9CA3AF]">{error}</p>
+        <button onClick={load} className="rounded-md bg-[#C9A961] px-5 py-2 text-sm font-medium text-[#0F1113] hover:bg-[#E7D3A0]">
+          {language === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
+        </button>
+      </div>
+    );
+  }
+
+  if (!raw) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+        <Loader2 className="h-8 w-8 animate-spin text-[#C9A961]" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
