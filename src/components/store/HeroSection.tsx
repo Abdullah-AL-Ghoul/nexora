@@ -125,7 +125,7 @@ export const HeroSection: React.FC = () => {
 
   return (
     <section
-      className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-[#0F1113] border-b border-[#242831]"
+      className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-ink border-b border-line"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       aria-label="Luxury Hero Showcase"
@@ -157,20 +157,20 @@ export const HeroSection: React.FC = () => {
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 w-full">
         <div className="max-w-3xl space-y-6">
           {/* Atelier Badge */}
-          <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[#171A1F]/90 border border-[#C9A961]/40 backdrop-blur-md">
-            <Sparkles className="w-3.5 h-3.5 text-[#C9A961]" />
-            <span className="font-mono text-xs uppercase tracking-[0.25em] text-[#C9A961] font-semibold">
+          <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-surface/90 border border-gold/40 backdrop-blur-md">
+            <Sparkles className="w-3.5 h-3.5 text-gold" />
+            <span className="font-mono text-xs uppercase tracking-[0.25em] text-gold font-semibold">
               {slide.atelierLabel[language]}
             </span>
-            <span aria-hidden="true" className="text-[#C9A961]/40">·</span>
-            <span className="text-xs font-mono uppercase tracking-widest text-[#E7D3A0]/90">
+            <span aria-hidden="true" className="text-gold/40">·</span>
+            <span className="text-xs font-mono uppercase tracking-widest text-gold-soft/90">
               {slide.tagline[language]}
             </span>
           </div>
 
           {/* Refined Typography Hierarchy */}
           <div className="space-y-2">
-            <h1 className="font-serif-luxury text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-[#F5F5F5] leading-[1.08]">
+            <h1 className="font-serif-luxury text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-fg leading-[1.08]">
               {slide.titleLine1[language]} <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#F5F5F5] via-[#E7D3A0] to-[#C9A961]">
                 {slide.titleLine2[language]}
@@ -179,7 +179,7 @@ export const HeroSection: React.FC = () => {
           </div>
 
           {/* Editorial Description */}
-          <p className="text-sm sm:text-base text-[#9CA3AF] max-w-2xl leading-relaxed font-light">
+          <p className="text-sm sm:text-base text-fg-muted max-w-2xl leading-relaxed font-light">
             {slide.description[language]}
           </p>
 
@@ -187,7 +187,7 @@ export const HeroSection: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
             <button
               onClick={handleExploreShop}
-              className="px-8 py-4 rounded-md bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] font-semibold text-xs tracking-[0.2em] uppercase flex items-center justify-center gap-2.5 shadow-2xl shadow-[#C9A961]/25 transition-all duration-300 cursor-pointer transform hover:-translate-y-0.5"
+              className="px-8 py-4 rounded-md bg-gold text-ink hover:bg-gold-soft font-semibold text-xs tracking-[0.2em] uppercase flex items-center justify-center gap-2.5 shadow-2xl shadow-gold transition-all duration-300 cursor-pointer transform hover:-translate-y-0.5"
             >
               <span>{t.hero.ctaExplore}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />
@@ -195,36 +195,36 @@ export const HeroSection: React.FC = () => {
 
             <button
               onClick={() => handleExploreAtelier(slide.categorySlug)}
-              className="px-8 py-4 rounded-md bg-[#171A1F]/90 backdrop-blur-md border border-[#242831] hover:border-[#C9A961] text-[#F5F5F5] hover:text-[#C9A961] font-semibold text-xs tracking-[0.2em] uppercase transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className="px-8 py-4 rounded-md bg-surface/90 backdrop-blur-md border border-line hover:border-gold text-fg hover:text-gold font-semibold text-xs tracking-[0.2em] uppercase transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
               <span>{slide.accentNote[language]}</span>
-              <span className="text-xs text-[#9CA3AF]">({slide.priceNote[language]})</span>
+              <span className="text-xs text-fg-muted">({slide.priceNote[language]})</span>
             </button>
           </div>
 
           {/* Key Metrics Hallmark Bar */}
-          <div className="pt-8 border-t border-[#242831]/80 grid grid-cols-2 sm:grid-cols-4 gap-6 text-left rtl:text-right">
+          <div className="pt-8 border-t border-line/80 grid grid-cols-2 sm:grid-cols-4 gap-6 text-left rtl:text-right">
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-[#F5F5F5]">{t.hero.guaranteeAuth}</div>
-              <div className="text-[11px] font-mono text-[#9CA3AF] uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeAuth}</div>
+              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'سند معتمد' : 'Bespoke Roster'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-[#F5F5F5]">{t.hero.guaranteeSwiss}</div>
-              <div className="text-[11px] font-mono text-[#9CA3AF] uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeSwiss}</div>
+              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'معايير عالمية' : 'Artisanal Guilds'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-[#F5F5F5]">{t.hero.guaranteeFreight}</div>
-              <div className="text-[11px] font-mono text-[#9CA3AF] uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeFreight}</div>
+              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'شحن مؤمن' : 'Insured Freight'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-[#F5F5F5]">{language === 'ar' ? 'ضمان 5 سنوات' : '5-Year Vault'}</div>
-              <div className="text-[11px] font-mono text-[#9CA3AF] uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-fg">{language === 'ar' ? 'ضمان 5 سنوات' : '5-Year Vault'}</div>
+              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'ضمان استثنائي' : 'Artisanal Warranty'}
               </div>
             </div>
@@ -233,13 +233,13 @@ export const HeroSection: React.FC = () => {
       </div>
 
       {/* 3. Slider Navigation Controls & Indicators */}
-      <div className="absolute bottom-8 right-8 rtl:right-auto rtl:left-8 z-20 hidden md:flex items-center gap-6 bg-[#171A1F]/80 backdrop-blur-md border border-[#242831] p-3 rounded-lg">
+      <div className="absolute bottom-8 right-8 rtl:right-auto rtl:left-8 z-20 hidden md:flex items-center gap-6 bg-surface/80 backdrop-blur-md border border-line p-3 rounded-lg">
         {/* Slide Counter */}
-        <div className="font-mono text-xs text-[#9CA3AF] flex items-center gap-1.5 px-2">
-          <span className="text-[#C9A961] font-bold text-sm">
+        <div className="font-mono text-xs text-fg-muted flex items-center gap-1.5 px-2">
+          <span className="text-gold font-bold text-sm">
             0{currentSlideIndex + 1}
           </span>
-          <span className="text-[#242831]">/</span>
+          <span className="text-fg-faint">/</span>
           <span>0{HERO_SLIDES.length}</span>
         </div>
 
@@ -247,14 +247,14 @@ export const HeroSection: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handlePrev}
-            className="p-2 rounded bg-[#121418] hover:bg-[#242831] text-[#F5F5F5] border border-[#242831] transition-colors cursor-pointer"
+            className="p-2 rounded bg-raised hover:bg-line text-fg border border-line transition-colors cursor-pointer"
             aria-label="Previous Slide"
           >
             <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
           </button>
           <button
             onClick={handleNext}
-            className="p-2 rounded bg-[#121418] hover:bg-[#242831] text-[#F5F5F5] border border-[#242831] transition-colors cursor-pointer"
+            className="p-2 rounded bg-raised hover:bg-line text-fg border border-line transition-colors cursor-pointer"
             aria-label="Next Slide"
           >
             <ChevronRight className="w-4 h-4 rtl:rotate-180" />

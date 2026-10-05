@@ -35,18 +35,18 @@ export const QuickViewModal: React.FC = () => {
         className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
       />
 
-      <div className="relative w-full max-w-3xl bg-[#171A1F] border border-[#242831] rounded-xl shadow-2xl overflow-hidden z-10 grid grid-cols-1 md:grid-cols-2 my-auto max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-3xl bg-surface border border-line rounded-xl shadow-2xl overflow-hidden z-10 grid grid-cols-1 md:grid-cols-2 my-auto max-h-[90vh] overflow-y-auto">
         {/* Close Button */}
         <button
           onClick={() => setQuickViewProduct(null)}
-          className="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-20 p-2 text-[#9CA3AF] hover:text-[#F5F5F5] bg-[#121418]/80 rounded-full transition-colors cursor-pointer"
+          className="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-20 p-2 text-fg-muted hover:text-fg bg-raised/80 rounded-full transition-colors cursor-pointer"
           aria-label="Close dialog"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Product Media */}
-        <div className="relative aspect-square md:aspect-auto h-full bg-[#121418] flex items-center justify-center p-4">
+        <div className="relative aspect-square md:aspect-auto h-full bg-raised flex items-center justify-center p-4">
           <img
             src={product.images[0]?.url}
             alt={product.name}
@@ -57,28 +57,28 @@ export const QuickViewModal: React.FC = () => {
         {/* Content */}
         <div className="p-6 md:p-8 flex flex-col justify-between space-y-4">
           <div>
-            <div className="flex items-center gap-2 text-xs text-[#9CA3AF]">
-              <span className="text-[#C9A961] uppercase tracking-wider font-semibold">
+            <div className="flex items-center gap-2 text-xs text-fg-muted">
+              <span className="text-gold uppercase tracking-wider font-semibold">
                 {localizedCatName}
               </span>
               <span>·</span>
-              <span className="font-mono text-[11px] text-[#9CA3AF]">{product.sku}</span>
+              <span className="font-mono text-[11px] text-fg-muted">{product.sku}</span>
             </div>
 
-            <h3 className="font-serif-luxury text-xl font-bold text-[#F5F5F5] mt-1">
+            <h3 className="font-serif-luxury text-xl font-bold text-fg mt-1">
               {product.name}
             </h3>
 
-            <p className="text-xs text-[#9CA3AF] mt-1.5 leading-relaxed line-clamp-2">
+            <p className="text-xs text-fg-muted mt-1.5 leading-relaxed line-clamp-2">
               {product.description}
             </p>
 
             <div className="mt-3 flex items-baseline gap-3">
-              <span className="text-xl font-semibold text-[#F5F5F5]">
+              <span className="text-xl font-semibold text-fg">
                 ${currentPrice.toLocaleString()}
               </span>
               {product.compareAtPrice && product.compareAtPrice > currentPrice && (
-                <span className="text-sm text-[#9CA3AF] line-through">
+                <span className="text-sm text-fg-muted line-through">
                   ${product.compareAtPrice.toLocaleString()}
                 </span>
               )}
@@ -87,7 +87,7 @@ export const QuickViewModal: React.FC = () => {
             {/* Variants Selector */}
             {product.variants.length > 0 && (
               <div className="mt-5 space-y-2">
-                <label className="text-xs font-medium text-[#9CA3AF] uppercase tracking-wider">
+                <label className="text-xs font-medium text-fg-muted uppercase tracking-wider">
                   {t.product.selectVariant}
                 </label>
                 <div className="grid grid-cols-1 gap-2">
@@ -99,15 +99,15 @@ export const QuickViewModal: React.FC = () => {
                         onClick={() => setSelectedVariant(v)}
                         className={`flex items-center justify-between p-2.5 rounded text-xs border text-left rtl:text-right transition-colors cursor-pointer ${
                           isSelected
-                            ? 'border-[#C9A961] bg-[#C9A961]/10 text-[#F5F5F5]'
-                            : 'border-[#242831] bg-[#121418] text-[#9CA3AF] hover:border-[#9CA3AF]'
+                            ? 'border-gold bg-gold/10 text-fg'
+                            : 'border-line bg-raised text-fg-muted hover:border-fg-muted'
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          {isSelected && <Check className="w-3.5 h-3.5 text-[#C9A961]" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-gold" />}
                           <span>{v.name}</span>
                         </div>
-                        <span className="font-mono text-[#F5F5F5]">${v.price.toLocaleString()}</span>
+                        <span className="font-mono text-fg">${v.price.toLocaleString()}</span>
                       </button>
                     );
                   })}
@@ -116,19 +116,19 @@ export const QuickViewModal: React.FC = () => {
             )}
           </div>
 
-          <div className="space-y-3 pt-4 border-t border-[#242831]">
+          <div className="space-y-3 pt-4 border-t border-line">
             <div className="flex items-center gap-3">
-              <div className="flex items-center border border-[#242831] rounded bg-[#121418] px-2 py-1.5 text-xs">
-                <span className="text-[#9CA3AF] mr-2 rtl:mr-0 rtl:ml-2">
+              <div className="flex items-center border border-line rounded bg-raised px-2 py-1.5 text-xs">
+                <span className="text-fg-muted mr-2 rtl:mr-0 rtl:ml-2">
                   {language === 'ar' ? 'الكمية' : 'Qty'}
                 </span>
                 <select
                   value={quantity}
                   onChange={(e) => setQuantity(parseInt(e.target.value, 10))}
-                  className="bg-transparent text-[#F5F5F5] outline-none cursor-pointer"
+                  className="bg-transparent text-fg outline-none cursor-pointer"
                 >
                   {[...Array(Math.min(currentStock, 8))].map((_, idx) => (
-                    <option key={idx + 1} value={idx + 1} className="bg-[#171A1F]">
+                    <option key={idx + 1} value={idx + 1} className="bg-surface">
                       {idx + 1}
                     </option>
                   ))}
@@ -138,7 +138,7 @@ export const QuickViewModal: React.FC = () => {
               <button
                 onClick={handleAdd}
                 disabled={currentStock <= 0}
-                className="flex-1 py-2.5 px-4 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] font-semibold text-xs tracking-wider uppercase transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2.5 px-4 rounded bg-gold text-ink hover:bg-gold-soft font-semibold text-xs tracking-wider uppercase transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
                 <span>{currentStock > 0 ? t.product.addToBag : t.product.outOfStock}</span>
@@ -147,7 +147,7 @@ export const QuickViewModal: React.FC = () => {
 
             <button
               onClick={handleViewFullPage}
-              className="w-full text-center text-xs text-[#9CA3AF] hover:text-[#C9A961] transition-colors cursor-pointer"
+              className="w-full text-center text-xs text-fg-muted hover:text-gold transition-colors cursor-pointer"
             >
               {language === 'ar' ? 'عرض الصفحة الكاملة للمنتج والتفاصيل ←' : 'View Full Details & Provenance Page →'}
             </button>

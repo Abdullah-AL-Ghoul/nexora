@@ -78,7 +78,7 @@ export const ProductDetailPage: React.FC = () => {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#C9A961]" />
+        <Loader2 className="w-8 h-8 animate-spin text-gold" />
       </div>
     );
   }
@@ -86,20 +86,20 @@ export const ProductDetailPage: React.FC = () => {
   if (loadError) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4">
-        <h2 className="font-serif-luxury text-2xl font-bold text-[#F5F5F5]">{t.product.notFoundTitle}</h2>
-        <p className="text-xs text-[#9CA3AF]">
+        <h2 className="font-serif-luxury text-2xl font-bold text-fg">{t.product.notFoundTitle}</h2>
+        <p className="text-xs text-fg-muted">
           {loadError}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={() => loadProduct(slug)}
-            className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] font-semibold text-xs uppercase cursor-pointer"
+            className="px-6 py-2.5 rounded bg-gold text-ink font-semibold text-xs uppercase cursor-pointer"
           >
             {language === 'ar' ? 'إعادة المحاولة' : 'Try Again'}
           </button>
           <button
             onClick={() => navigate('shop')}
-            className="px-6 py-2.5 rounded bg-[#171A1F] border border-[#242831] text-[#F5F5F5] font-semibold text-xs uppercase cursor-pointer"
+            className="px-6 py-2.5 rounded bg-surface border border-line text-fg font-semibold text-xs uppercase cursor-pointer"
           >
             {t.product.returnCollection}
           </button>
@@ -111,13 +111,13 @@ export const ProductDetailPage: React.FC = () => {
   if (!product) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-24 text-center space-y-4">
-        <h2 className="font-serif-luxury text-2xl font-bold text-[#F5F5F5]">{t.product.notFoundTitle}</h2>
-        <p className="text-xs text-[#9CA3AF]">
+        <h2 className="font-serif-luxury text-2xl font-bold text-fg">{t.product.notFoundTitle}</h2>
+        <p className="text-xs text-fg-muted">
           {t.product.notFoundDesc}
         </p>
         <button
           onClick={() => navigate('shop')}
-          className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] font-semibold text-xs uppercase cursor-pointer"
+          className="px-6 py-2.5 rounded bg-gold text-ink font-semibold text-xs uppercase cursor-pointer"
         >
           {t.product.returnCollection}
         </button>
@@ -141,7 +141,7 @@ export const ProductDetailPage: React.FC = () => {
       {/* Back button */}
       <button
         onClick={() => navigate('shop')}
-        className="inline-flex items-center gap-2 text-xs text-[#9CA3AF] hover:text-[#C9A961] transition-colors cursor-pointer"
+        className="inline-flex items-center gap-2 text-xs text-fg-muted hover:text-gold transition-colors cursor-pointer"
       >
         <ArrowLeft className="w-3.5 h-3.5 rtl:rotate-180" />
         <span>{t.product.returnCatalog}</span>
@@ -152,7 +152,7 @@ export const ProductDetailPage: React.FC = () => {
         {/* Left: Gallery (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
           {/* Main Primary Image */}
-          <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#171A1F] border border-[#242831]">
+          <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-surface border border-line">
             <img
               src={product.images[activeImageIndex]?.url || product.images[0]?.url}
               alt={product.images[activeImageIndex]?.altText || product.name}
@@ -169,8 +169,8 @@ export const ProductDetailPage: React.FC = () => {
                   onClick={() => setActiveImageIndex(idx)}
                   className={`w-20 h-20 rounded-lg overflow-hidden border transition-all cursor-pointer shrink-0 ${
                     activeImageIndex === idx
-                      ? 'border-[#C9A961] ring-1 ring-[#C9A961]'
-                      : 'border-[#242831] opacity-70 hover:opacity-100'
+                      ? 'border-gold ring-1 ring-gold'
+                      : 'border-line opacity-70 hover:opacity-100'
                   }`}
                 >
                   <img src={img.url} alt={img.altText} className="w-full h-full object-cover" />
@@ -183,37 +183,37 @@ export const ProductDetailPage: React.FC = () => {
         {/* Right: Purchasing & Details Panel (5 Cols) */}
         <div className="lg:col-span-5 space-y-6">
           {/* Metadata line */}
-          <div className="flex items-center gap-2 text-xs text-[#9CA3AF]">
-            <span className="uppercase tracking-widest text-[#C9A961] font-semibold text-[11px]">
+          <div className="flex items-center gap-2 text-xs text-fg-muted">
+            <span className="uppercase tracking-widest text-gold font-semibold text-[11px]">
               {localizedCategoryName}
             </span>
             <span>·</span>
-            <span className="font-mono text-[11px] text-[#9CA3AF]">{product.sku}</span>
+            <span className="font-mono text-[11px] text-fg-muted">{product.sku}</span>
           </div>
 
-          <h1 className="font-serif-luxury text-3xl sm:text-4xl font-bold text-[#F5F5F5] leading-tight">
+          <h1 className="font-serif-luxury text-3xl sm:text-4xl font-bold text-fg leading-tight">
             {product.name}
           </h1>
 
-          <p className="text-sm text-[#C9A961] font-medium leading-relaxed">
+          <p className="text-sm text-gold font-medium leading-relaxed">
             {product.tagline}
           </p>
 
-          <p className="text-xs text-[#9CA3AF] leading-relaxed">
+          <p className="text-xs text-fg-muted leading-relaxed">
             {product.description}
           </p>
 
           {/* Price display */}
-          <div className="py-4 border-y border-[#242831] flex items-baseline gap-4">
-            <span className="text-3xl font-bold text-[#F5F5F5] font-mono">
+          <div className="py-4 border-y border-line flex items-baseline gap-4">
+            <span className="text-3xl font-bold text-fg font-mono">
               ${currentPrice.toLocaleString()}
             </span>
             {product.compareAtPrice && product.compareAtPrice > currentPrice && (
-              <span className="text-sm text-[#9CA3AF] line-through font-mono">
+              <span className="text-sm text-fg-muted line-through font-mono">
                 ${product.compareAtPrice.toLocaleString()}
               </span>
             )}
-            <span className="text-xs text-emerald-400 font-mono ml-auto rtl:ml-0 rtl:mr-auto">
+            <span className="text-xs text-success font-mono ml-auto rtl:ml-0 rtl:mr-auto">
               {currentStock > 0
                 ? `${t.product.inStock} (${currentStock} ${language === 'ar' ? 'قطعة' : 'units'})`
                 : t.product.outOfStock}
@@ -223,7 +223,7 @@ export const ProductDetailPage: React.FC = () => {
           {/* Variants Selector */}
           {product.variants.length > 0 && (
             <div className="space-y-3">
-              <label className="text-xs font-semibold text-[#F5F5F5] uppercase tracking-wider block">
+              <label className="text-xs font-semibold text-fg uppercase tracking-wider block">
                 {t.product.selectVariant}
               </label>
               <div className="grid grid-cols-1 gap-2">
@@ -235,19 +235,19 @@ export const ProductDetailPage: React.FC = () => {
                       onClick={() => setSelectedVariant(v)}
                       className={`flex items-center justify-between p-3 rounded-md text-xs border text-left rtl:text-right transition-colors cursor-pointer ${
                         isSelected
-                          ? 'border-[#C9A961] bg-[#C9A961]/10 text-[#F5F5F5]'
-                          : 'border-[#242831] bg-[#171A1F] text-[#9CA3AF] hover:border-[#9CA3AF]'
+                          ? 'border-gold bg-gold/10 text-fg'
+                          : 'border-line bg-surface text-fg-muted hover:border-fg-muted'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        {isSelected && <Check className="w-4 h-4 text-[#C9A961]" />}
-                        <span className="font-medium text-[#F5F5F5]">{v.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-gold" />}
+                        <span className="font-medium text-fg">{v.name}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-[11px] text-[#9CA3AF]">
+                        <span className="text-[11px] text-fg-muted">
                           {language === 'ar' ? `المخزون: ${v.stock}` : `Stock: ${v.stock}`}
                         </span>
-                        <span className="font-mono font-semibold text-[#F5F5F5]">
+                        <span className="font-mono font-semibold text-fg">
                           ${v.price.toLocaleString()}
                         </span>
                       </div>
@@ -262,20 +262,20 @@ export const ProductDetailPage: React.FC = () => {
           <div className="space-y-4 pt-2">
             <div className="flex items-center gap-4">
               {/* Quantity selector */}
-              <div className="flex items-center border border-[#242831] rounded-md bg-[#171A1F]">
+              <div className="flex items-center border border-line rounded-md bg-surface">
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="p-3 text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors cursor-pointer"
+                  className="p-3 text-fg-muted hover:text-fg transition-colors cursor-pointer"
                   aria-label="Decrease quantity"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <span className="w-12 text-center text-xs font-mono font-bold text-[#F5F5F5]">
+                <span className="w-12 text-center text-xs font-mono font-bold text-fg">
                   {quantity}
                 </span>
                 <button
                   onClick={() => setQuantity(Math.min(currentStock, quantity + 1))}
-                  className="p-3 text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors cursor-pointer"
+                  className="p-3 text-fg-muted hover:text-fg transition-colors cursor-pointer"
                   aria-label="Increase quantity"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -286,7 +286,7 @@ export const ProductDetailPage: React.FC = () => {
               <button
                 onClick={handleAddToCart}
                 disabled={currentStock <= 0}
-                className="flex-1 py-3.5 px-6 rounded-md bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] font-semibold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-2 shadow-xl shadow-[#C9A961]/10 transition-colors cursor-pointer disabled:opacity-40"
+                className="flex-1 py-3.5 px-6 rounded-md bg-gold text-ink hover:bg-gold-soft font-semibold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-2 shadow-xl shadow-gold/10 transition-colors cursor-pointer disabled:opacity-40"
               >
                 <Plus className="w-4 h-4" />
                 <span>{currentStock > 0 ? t.product.addToBag : t.product.outOfStock}</span>
@@ -297,8 +297,8 @@ export const ProductDetailPage: React.FC = () => {
                 onClick={() => toggleWishlist(product)}
                 className={`p-3.5 rounded-md border transition-colors cursor-pointer ${
                   isWishlisted
-                    ? 'border-[#C9A961] bg-[#C9A961] text-[#0F1113]'
-                    : 'border-[#242831] bg-[#171A1F] text-[#9CA3AF] hover:text-[#F5F5F5] hover:border-[#C9A961]'
+                    ? 'border-gold bg-gold text-ink'
+                    : 'border-line bg-surface text-fg-muted hover:text-fg hover:border-gold'
                 }`}
                 aria-label="Toggle Wishlist"
               >
@@ -307,17 +307,17 @@ export const ProductDetailPage: React.FC = () => {
             </div>
 
             {/* Value Guarantees */}
-            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-[#242831] text-[11px] text-[#9CA3AF]">
+            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-line text-[11px] text-fg-muted">
               <div className="flex items-center gap-1.5">
-                <Truck className="w-3.5 h-3.5 text-[#C9A961]" />
+                <Truck className="w-3.5 h-3.5 text-gold" />
                 <span>{t.product.insuredFreight}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5 text-[#C9A961]" />
+                <Shield className="w-3.5 h-3.5 text-gold" />
                 <span>{t.product.warranty}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Award className="w-3.5 h-3.5 text-[#C9A961]" />
+                <Award className="w-3.5 h-3.5 text-gold" />
                 <span>{t.product.certifiedOrigin}</span>
               </div>
             </div>
@@ -326,49 +326,49 @@ export const ProductDetailPage: React.FC = () => {
       </div>
 
       {/* Technical Specifications Section */}
-      <section className="border-t border-[#242831] pt-12">
-        <h3 className="font-serif-luxury text-xl font-bold text-[#F5F5F5] mb-6">
+      <section className="border-t border-line pt-12">
+        <h3 className="font-serif-luxury text-xl font-bold text-fg mb-6">
           {t.product.specsTitle}
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-[#171A1F] border border-[#242831] rounded-xl p-6 sm:p-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-surface border border-line rounded-xl p-6 sm:p-8">
           <div className="divide-y divide-[#242831] text-xs">
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.placeOfOrigin}</span>
-              <span className="text-[#F5F5F5] font-medium">{product.origin || (language === 'ar' ? 'جنيف، سويسرا' : 'Geneva, Switzerland')}</span>
+              <span className="text-fg-muted">{t.product.placeOfOrigin}</span>
+              <span className="text-fg font-medium">{product.origin || (language === 'ar' ? 'جنيف، سويسرا' : 'Geneva, Switzerland')}</span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.atelierDiscipline}</span>
-              <span className="text-[#F5F5F5] font-medium">{localizedCategoryName}</span>
+              <span className="text-fg-muted">{t.product.atelierDiscipline}</span>
+              <span className="text-fg font-medium">{localizedCategoryName}</span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.skuLabel}</span>
-              <span className="font-mono text-[#F5F5F5]">{product.sku}</span>
+              <span className="text-fg-muted">{t.product.skuLabel}</span>
+              <span className="font-mono text-fg">{product.sku}</span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.dimensions}</span>
-              <span className="text-[#F5F5F5] font-medium">{product.dimensions || (language === 'ar' ? 'مقاييس معمارية دقيقة' : 'Bespoke hand-crafted scale')}</span>
+              <span className="text-fg-muted">{t.product.dimensions}</span>
+              <span className="text-fg font-medium">{product.dimensions || (language === 'ar' ? 'مقاييس معمارية دقيقة' : 'Bespoke hand-crafted scale')}</span>
             </div>
           </div>
 
           <div className="divide-y divide-[#242831] text-xs">
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.weight}</span>
-              <span className="text-[#F5F5F5] font-medium">{product.weight || (language === 'ar' ? 'وزن متوازن ومدروس' : 'Calibrated balanced heft')}</span>
+              <span className="text-fg-muted">{t.product.weight}</span>
+              <span className="text-fg font-medium">{product.weight || (language === 'ar' ? 'وزن متوازن ومدروس' : 'Calibrated balanced heft')}</span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.materials}</span>
-              <span className="text-[#F5F5F5] font-medium">
+              <span className="text-fg-muted">{t.product.materials}</span>
+              <span className="text-fg font-medium">
                 {product.materials?.join(', ') || (language === 'ar' ? 'سبائك طيران صلبة، زجاج سافير مزدوج' : 'Aerospace Alloys, Sapphire Crystal')}
               </span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.qualityStandard}</span>
-              <span className="text-[#F5F5F5] font-medium">{language === 'ar' ? 'معيار ISO 9001 / دقة كرونومترية' : 'ISO 9001 / Chronometric Grade'}</span>
+              <span className="text-fg-muted">{t.product.qualityStandard}</span>
+              <span className="text-fg font-medium">{language === 'ar' ? 'معيار ISO 9001 / دقة كرونومترية' : 'ISO 9001 / Chronometric Grade'}</span>
             </div>
             <div className="py-3 flex justify-between">
-              <span className="text-[#9CA3AF]">{t.product.serialVerification}</span>
-              <span className="text-[#C9A961] font-mono">{language === 'ar' ? 'رقم تسلسلي محفور بالليزر' : 'Laser-Etched Holographic Tag'}</span>
+              <span className="text-fg-muted">{t.product.serialVerification}</span>
+              <span className="text-gold font-mono">{language === 'ar' ? 'رقم تسلسلي محفور بالليزر' : 'Laser-Etched Holographic Tag'}</span>
             </div>
           </div>
         </div>
@@ -376,16 +376,16 @@ export const ProductDetailPage: React.FC = () => {
 
       {/* Related Products Carousel */}
       {relatedProducts.length > 0 && (
-        <section className="border-t border-[#242831] pt-12 space-y-6">
+        <section className="border-t border-line pt-12 space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="font-serif-luxury text-xl font-bold text-[#F5F5F5]">
+            <h3 className="font-serif-luxury text-xl font-bold text-fg">
               {t.product.relatedTitle}
             </h3>
             <button
               onClick={() => {
                 navigate('shop');
               }}
-              className="text-xs text-[#C9A961] hover:underline cursor-pointer"
+              className="text-xs text-gold hover:underline cursor-pointer"
             >
               {t.home.exploreFullCatalog}
             </button>

@@ -11,32 +11,32 @@ export const WishlistPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header */}
-      <div className="border-b border-[#242831] pb-6 flex items-center justify-between">
+      <div className="border-b border-line pb-6 flex items-center justify-between">
         <div>
-          <span className="text-xs uppercase tracking-[0.2em] text-[#C9A961] font-semibold">
+          <span className="text-xs uppercase tracking-[0.2em] text-gold font-semibold">
             {language === 'ar' ? 'السجل الخاص' : 'Private Archive'}
           </span>
-          <h1 className="font-serif-luxury text-3xl font-bold text-[#F5F5F5] mt-1">
+          <h1 className="font-serif-luxury text-3xl font-bold text-fg mt-1">
             {t.wishlist.title} ({wishlist.length})
           </h1>
-          <p className="text-xs text-[#9CA3AF] mt-1">
+          <p className="text-xs text-fg-muted mt-1">
             {t.wishlist.subtitle}
           </p>
         </div>
       </div>
 
       {wishlist.length === 0 ? (
-        <div className="p-16 text-center rounded-xl bg-[#171A1F] border border-[#242831] space-y-4">
-          <div className="w-16 h-16 rounded-full bg-[#121418] border border-[#242831] flex items-center justify-center mx-auto text-[#9CA3AF]">
+        <div className="p-16 text-center rounded-xl bg-surface border border-line space-y-4">
+          <div className="w-16 h-16 rounded-full bg-raised border border-line flex items-center justify-center mx-auto text-fg-muted">
             <Heart className="w-8 h-8" />
           </div>
-          <h3 className="text-base font-semibold text-[#F5F5F5]">{t.wishlist.emptyTitle}</h3>
-          <p className="text-xs text-[#9CA3AF] max-w-sm mx-auto">
+          <h3 className="text-base font-semibold text-fg">{t.wishlist.emptyTitle}</h3>
+          <p className="text-xs text-fg-muted max-w-sm mx-auto">
             {t.wishlist.emptySubtitle}
           </p>
           <button
             onClick={() => navigate('shop')}
-            className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+            className="px-6 py-2.5 rounded bg-gold text-ink hover:bg-gold-soft text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
           >
             {t.wishlist.browseCatalog}
           </button>

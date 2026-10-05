@@ -27,7 +27,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default:
 function PageLoader() {
   return (
     <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
-      <Loader2 className="h-8 w-8 animate-spin text-[#C9A961]" />
+      <Loader2 className="h-8 w-8 animate-spin text-gold" />
     </div>
   );
 }
@@ -43,16 +43,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">
           <div className="text-4xl" aria-hidden>🛠</div>
           <h1 className="font-serif-luxury text-2xl">Something went wrong</h1>
-          <p className="max-w-md text-sm text-[#9CA3AF]">An unexpected error interrupted this page.</p>
+          <p className="max-w-md text-sm text-fg-muted">An unexpected error interrupted this page.</p>
           {this.state.message && (
-            <details className="max-w-lg rounded-md border border-[#242831] bg-[#121418] px-4 py-3 text-left text-xs text-[#9CA3AF]">
-              <summary className="cursor-pointer font-medium text-[#C9A961]">Error details</summary>
+            <details className="max-w-lg rounded-md border border-line bg-raised px-4 py-3 text-left text-xs text-fg-muted">
+              <summary className="cursor-pointer font-medium text-gold">Error details</summary>
               <pre className="mt-2 whitespace-pre-wrap break-words">{this.state.message}</pre>
             </details>
           )}
           <button
             onClick={() => { this.setState({ hasError: false }); window.location.reload(); }}
-            className="rounded-md bg-[#C9A961] px-5 py-2 font-medium text-[#0F1113] hover:bg-[#E7D3A0]"
+            className="rounded-md bg-gold px-5 py-2 font-medium text-ink hover:bg-gold-soft"
           >
             Reload page
           </button>
@@ -119,10 +119,10 @@ function AppShell() {
   }, [language]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0F1113] text-[#F5F5F5]">
+    <div className="min-h-screen flex flex-col bg-ink text-fg">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-[60] focus:top-4 focus:left-4 focus:rounded focus:bg-[#C9A961] focus:px-4 focus:py-2 focus:text-[#0F1113]"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-[60] focus:top-4 focus:left-4 focus:rounded focus:bg-gold focus:px-4 focus:py-2 focus:text-ink"
       >
         Skip to content
       </a>

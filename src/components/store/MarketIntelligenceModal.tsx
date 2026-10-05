@@ -84,21 +84,21 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
       <div onClick={onClose} className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
 
       {/* Modal Stage */}
-      <div className="relative w-full max-w-2xl bg-[#171A1F] border border-[#242831] rounded-xl shadow-2xl p-6 sm:p-8 z-10 space-y-6">
+      <div className="relative w-full max-w-2xl bg-surface border border-line rounded-xl shadow-2xl p-6 sm:p-8 z-10 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#242831] pb-4">
+        <div className="flex items-center justify-between border-b border-line pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#121418] border border-[#242831] flex items-center justify-center text-[#C9A961]">
+            <div className="w-8 h-8 rounded-lg bg-raised border border-line flex items-center justify-center text-gold">
               <Globe className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-serif-luxury text-lg font-bold text-[#F5F5F5] flex items-center gap-2">
+              <h3 className="font-serif-luxury text-lg font-bold text-fg flex items-center gap-2">
                 <span>Atelier Live Market Intelligence</span>
-                <span className="text-[10px] font-mono uppercase bg-[#C9A961]/20 text-[#C9A961] px-2 py-0.5 rounded">
+                <span className="text-[10px] font-mono uppercase bg-gold/20 text-gold px-2 py-0.5 rounded">
                   Google Search Grounded
                 </span>
               </h3>
-              <p className="text-xs text-[#9CA3AF]">
+              <p className="text-xs text-fg-muted">
                 Real-time valuation benchmarks and horological indices powered by Gemini 3.5 & Google Search.
               </p>
             </div>
@@ -106,7 +106,7 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors"
+            className="p-1.5 rounded text-fg-muted hover:text-fg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -116,20 +116,20 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
         <div className="space-y-3">
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-fg-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="Inquire live auction results, material spot indices, or horological provenance..."
-                className="w-full bg-[#121418] border border-[#242831] text-xs text-[#F5F5F5] pl-10 pr-3.5 py-3 rounded-lg outline-none focus:border-[#C9A961]"
+                className="w-full bg-raised border border-line text-xs text-fg pl-10 pr-3.5 py-3 rounded-lg outline-none focus:border-gold"
               />
             </div>
             <button
               onClick={() => handleSearch()}
               disabled={loading || !query.trim()}
-              className="px-5 py-3 rounded-lg bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] font-semibold text-xs tracking-wider uppercase flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
+              className="px-5 py-3 rounded-lg bg-gold text-ink hover:bg-gold-soft font-semibold text-xs tracking-wider uppercase flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-colors"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Inquire</span>}
             </button>
@@ -137,7 +137,7 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
 
           {/* Quick Prompts */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-[#9CA3AF]">Suggested:</span>
+            <span className="text-[11px] text-fg-muted">Suggested:</span>
             {sampleQueries.map((sample) => (
               <button
                 key={sample}
@@ -145,7 +145,7 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
                   setQuery(sample);
                   handleSearch(sample);
                 }}
-                className="text-[11px] text-[#C9A961] hover:underline bg-[#121418] px-2 py-1 rounded border border-[#242831] transition-colors cursor-pointer"
+                className="text-[11px] text-gold hover:underline bg-raised px-2 py-1 rounded border border-line transition-colors cursor-pointer"
               >
                 {sample}
               </button>
@@ -155,15 +155,15 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
 
         {/* Error message */}
         {error && (
-          <div className="p-4 rounded-lg bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300">
+          <div className="p-4 rounded-lg bg-rose-950/40 border border-danger/40 text-xs text-rose-300">
             {error}
           </div>
         )}
 
         {/* Result Area */}
         {result && (
-          <div className="p-5 rounded-lg bg-[#121418] border border-[#242831] space-y-4 max-h-80 overflow-y-auto">
-            <div className="flex items-center justify-between text-[11px] font-mono text-[#C9A961] border-b border-[#242831] pb-2">
+          <div className="p-5 rounded-lg bg-raised border border-line space-y-4 max-h-80 overflow-y-auto">
+            <div className="flex items-center justify-between text-[11px] font-mono text-gold border-b border-line pb-2">
               <span className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Grounded Dispatch</span>
@@ -171,14 +171,14 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
               <span>{result.timestamp ? new Date(result.timestamp).toLocaleTimeString() : ''}</span>
             </div>
 
-            <div className="text-xs text-[#F5F5F5] leading-relaxed whitespace-pre-wrap font-sans">
+            <div className="text-xs text-fg leading-relaxed whitespace-pre-wrap font-sans">
               {result.text}
             </div>
 
             {/* Citations if available */}
             {result.groundingMetadata && (
-              <div className="pt-3 border-t border-[#242831] text-[11px] space-y-1">
-                <span className="text-[#9CA3AF] uppercase font-mono tracking-wider block">
+              <div className="pt-3 border-t border-line text-[11px] space-y-1">
+                <span className="text-fg-muted uppercase font-mono tracking-wider block">
                   Grounding Sources & Verifications:
                 </span>
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -196,7 +196,7 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
                         href={uri}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[#C9A961] hover:underline text-[10px] bg-[#171A1F] border border-[#242831] px-2 py-0.5 rounded"
+                        className="inline-flex items-center gap-1 text-gold hover:underline text-[10px] bg-surface border border-line px-2 py-0.5 rounded"
                       >
                         <span className="truncate max-w-[200px]">{title}</span>
                         <ExternalLink className="w-2.5 h-2.5" />

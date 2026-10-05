@@ -158,31 +158,31 @@ export const LoginPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-16 bg-[#0F1113]">
+    <div className="min-h-[85vh] flex items-center justify-center px-4 py-16 bg-ink">
       <div className="w-full max-w-md space-y-8">
         {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-1.5 cursor-pointer" onClick={() => navigate('home')}>
-            <span className="font-serif-luxury text-3xl font-bold tracking-[0.2em] text-[#F5F5F5]">
+            <span className="font-serif-luxury text-3xl font-bold tracking-[0.2em] text-fg">
               NEXORA
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#C9A961]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-gold" />
           </div>
-          <h2 className="font-serif-luxury text-xl font-semibold text-[#F5F5F5]">
+          <h2 className="font-serif-luxury text-xl font-semibold text-fg">
             {isSignUp ? t.login.registerTitle : t.login.signInTitle}
           </h2>
-          <p className="text-xs text-[#9CA3AF]">
+          <p className="text-xs text-fg-muted">
             {isSignUp ? t.login.registerSubtitle : t.login.signInSubtitle}
           </p>
         </div>
 
         {/* Auth Box */}
-        <div className="p-8 rounded-2xl bg-[#171A1F] border border-[#242831] shadow-2xl space-y-6">
+        <div className="p-8 rounded-2xl bg-surface border border-line shadow-2xl space-y-6">
           {/* Google Sign In Button */}
           <button
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg bg-[#121418] hover:bg-[#1E2229] border border-[#242831] hover:border-[#C9A961] text-[#F5F5F5] font-semibold text-xs tracking-wider transition-all duration-200 cursor-pointer disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg bg-raised hover:bg-elevated border border-line hover:border-gold text-fg font-semibold text-xs tracking-wider transition-all duration-200 cursor-pointer disabled:opacity-50"
           >
             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
               <path
@@ -206,61 +206,61 @@ export const LoginPage: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-[#242831]" />
-            <span className="text-[11px] font-mono text-[#9CA3AF] uppercase">{t.login.orWithEmail}</span>
-            <div className="flex-1 h-px bg-[#242831]" />
+            <div className="flex-1 h-px bg-line" />
+            <span className="text-[11px] font-mono text-fg-muted uppercase">{t.login.orWithEmail}</span>
+            <div className="flex-1 h-px bg-line" />
           </div>
 
           {/* Email / Password Form */}
           <form onSubmit={handleEmailAuth} className="space-y-4 text-xs">
             {isSignUp && (
               <div>
-                <label className="text-[#9CA3AF] block mb-1.5 font-medium">{t.login.fullName}</label>
+                <label className="text-fg-muted block mb-1.5 font-medium">{t.login.fullName}</label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
+                  <User className="w-4 h-4 text-fg-muted absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
                   <input
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Julian Vance"
                     required
-                    className="w-full bg-[#121418] border border-[#242831] text-[#F5F5F5] px-10 py-3 rounded-lg outline-none focus:border-[#C9A961]"
+                    className="w-full bg-raised border border-line text-fg px-10 py-3 rounded-lg outline-none focus:border-gold"
                   />
                 </div>
               </div>
             )}
 
             <div>
-              <label className="text-[#9CA3AF] block mb-1.5 font-medium">{t.login.email}</label>
+              <label className="text-fg-muted block mb-1.5 font-medium">{t.login.email}</label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
+                <Mail className="w-4 h-4 text-fg-muted absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@nexora.com"
                   required
-                  className="w-full bg-[#121418] border border-[#242831] text-[#F5F5F5] px-10 py-3 rounded-lg outline-none focus:border-[#C9A961]"
+                  className="w-full bg-raised border border-line text-fg px-10 py-3 rounded-lg outline-none focus:border-gold"
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-[#9CA3AF] block mb-1.5 font-medium">{t.login.password}</label>
+              <label className="text-fg-muted block mb-1.5 font-medium">{t.login.password}</label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
+                <Lock className="w-4 h-4 text-fg-muted absolute left-3.5 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3.5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  className="w-full bg-[#121418] border border-[#242831] text-[#F5F5F5] px-10 py-3 rounded-lg outline-none focus:border-[#C9A961]"
+                  className="w-full bg-raised border border-line text-fg px-10 py-3 rounded-lg outline-none focus:border-gold"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-3.5 text-[#9CA3AF] hover:text-[#F5F5F5]"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-3.5 text-fg-muted hover:text-fg"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -268,7 +268,7 @@ export const LoginPage: React.FC = () => {
             </div>
 
             {errorMessage && (
-              <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2">
+              <div className="p-3 rounded-lg bg-rose-950/40 border border-danger/40 text-xs text-rose-300 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
@@ -277,7 +277,7 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-lg bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] font-semibold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-2 shadow-xl shadow-[#C9A961]/15 transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-3.5 rounded-lg bg-gold text-ink hover:bg-gold-soft font-semibold text-xs tracking-[0.15em] uppercase flex items-center justify-center gap-2 shadow-xl shadow-gold/15 transition-all cursor-pointer disabled:opacity-50"
             >
               <span>{isSignUp ? t.login.registerBtn : t.login.signInBtn}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />
@@ -291,7 +291,7 @@ export const LoginPage: React.FC = () => {
                 setIsSignUp(!isSignUp);
                 setErrorMessage(null);
               }}
-              className="text-xs text-[#9CA3AF] hover:text-[#C9A961] transition-colors cursor-pointer"
+              className="text-xs text-fg-muted hover:text-gold transition-colors cursor-pointer"
             >
               {isSignUp ? t.login.alreadyHaveAccount : t.login.newCollector}
             </button>
@@ -299,14 +299,14 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {/* Demo Persona Selector (local-only preview role, real privileges come from the server) */}
-        <div className="p-6 rounded-2xl bg-[#171A1F] border border-[#242831] shadow-xl space-y-3">
+        <div className="p-6 rounded-2xl bg-surface border border-line shadow-xl space-y-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#C9A961] shrink-0" />
-            <h3 className="font-serif-luxury text-sm font-semibold text-[#F5F5F5]">
+            <Sparkles className="w-4 h-4 text-gold shrink-0" />
+            <h3 className="font-serif-luxury text-sm font-semibold text-fg">
               {language === 'ar' ? 'دخول تجريبي' : 'Demo Access'}
             </h3>
           </div>
-          <p className="text-[11px] text-[#9CA3AF] leading-relaxed">
+          <p className="text-[11px] text-fg-muted leading-relaxed">
             {language === 'ar'
               ? 'جرّب واجهة مختلفة (مدير / مسؤول) مباشرة دون الحاجة إلى تسجيل الدخول.'
               : 'Preview the Manager or Admin experience instantly, no sign-in required.'}
@@ -318,14 +318,14 @@ export const LoginPage: React.FC = () => {
                 type="button"
                 onClick={() => switchRole(p.role)}
                 disabled={loading}
-                className="flex-1 py-2.5 px-3 rounded-lg bg-[#121418] hover:bg-[#1E2229] border border-[#242831] hover:border-[#C9A961] text-[#F5F5F5] hover:text-[#F5F5F5] font-semibold text-[11px] tracking-wider transition-all duration-200 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2.5 px-3 rounded-lg bg-raised hover:bg-elevated border border-line hover:border-gold text-fg hover:text-fg font-semibold text-[11px] tracking-wider transition-all duration-200 cursor-pointer disabled:opacity-50"
               >
                 {p.label}
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-[#9CA3AF] flex items-start gap-1.5 leading-relaxed">
-            <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#9CA3AF]" />
+          <p className="text-[10px] text-fg-muted flex items-start gap-1.5 leading-relaxed">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5 text-fg-muted" />
             <span>
               {language === 'ar'
                 ? 'الدور التجريبي محلي فقط — تتطلب إجراءات الكتابة (المسؤول/المدير) تفويضاً حقيقياً من الخادم.'

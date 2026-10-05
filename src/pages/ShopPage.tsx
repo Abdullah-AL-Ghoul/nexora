@@ -143,16 +143,16 @@ export const ShopPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Page Header */}
-      <div className="border-b border-[#242831] pb-8">
-        <span className="text-xs uppercase tracking-[0.2em] text-[#C9A961] font-semibold">
+      <div className="border-b border-line pb-8">
+        <span className="text-xs uppercase tracking-[0.2em] text-gold font-semibold">
           {language === 'ar' ? 'التشكيلة المختارة' : 'Curated Catalog'}
         </span>
-        <h1 className="font-serif-luxury text-3xl sm:text-4xl font-bold text-[#F5F5F5] mt-1">
+        <h1 className="font-serif-luxury text-3xl sm:text-4xl font-bold text-fg mt-1">
           {selectedCategory === 'all'
             ? t.shop.title
             : currentCategoryObj?.name || t.shop.title}
         </h1>
-        <p className="text-xs text-[#9CA3AF] mt-2 max-w-2xl leading-relaxed">
+        <p className="text-xs text-fg-muted mt-2 max-w-2xl leading-relaxed">
           {selectedCategory === 'all'
             ? t.shop.subtitle
             : currentCategoryObj?.description}
@@ -167,8 +167,8 @@ export const ShopPage: React.FC = () => {
             onClick={() => handleCategorySelect('all')}
             className={`px-4 py-2 rounded text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
               selectedCategory === 'all'
-                ? 'bg-[#C9A961] text-[#0F1113]'
-                : 'bg-[#171A1F] text-[#9CA3AF] hover:text-[#F5F5F5] border border-[#242831]'
+                ? 'bg-gold text-ink'
+                : 'bg-surface text-fg-muted hover:text-fg border border-line'
             }`}
           >
             {t.shop.allCategories} ({totalProductCount})
@@ -179,8 +179,8 @@ export const ShopPage: React.FC = () => {
               onClick={() => handleCategorySelect(cat.slug)}
               className={`px-4 py-2 rounded text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 selectedCategory === cat.slug
-                  ? 'bg-[#C9A961] text-[#0F1113]'
-                  : 'bg-[#171A1F] text-[#9CA3AF] hover:text-[#F5F5F5] border border-[#242831]'
+                  ? 'bg-gold text-ink'
+                  : 'bg-surface text-fg-muted hover:text-fg border border-line'
               }`}
             >
               {cat.name} ({cat.itemCount})
@@ -189,10 +189,10 @@ export const ShopPage: React.FC = () => {
         </div>
 
         {/* Search, Price & Sort Controls */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-lg bg-[#171A1F] border border-[#242831]">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-lg bg-surface border border-line">
           {/* Keyword Search */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-[#9CA3AF] absolute left-3 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3" />
+            <Search className="w-4 h-4 text-fg-muted absolute left-3 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3" />
             <input
               type="text"
               value={searchQuery}
@@ -201,12 +201,12 @@ export const ShopPage: React.FC = () => {
                 setCurrentPage(1);
               }}
               placeholder={t.shop.searchPlaceholder}
-              className="w-full bg-[#121418] border border-[#242831] text-xs text-[#F5F5F5] pl-9 pr-8 rtl:pl-8 rtl:pr-9 py-2 rounded outline-none focus:border-[#C9A961] placeholder:text-gray-500"
+              className="w-full bg-raised border border-line text-xs text-fg pl-9 pr-8 rtl:pl-8 rtl:pr-9 py-2 rounded outline-none focus:border-gold placeholder:text-fg-faint"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-2.5 text-gray-400 hover:text-white"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-2.5 text-fg-faint hover:text-white"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -215,14 +215,14 @@ export const ShopPage: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Price Inputs */}
-            <div className="flex items-center gap-1.5 text-xs text-[#9CA3AF]">
+            <div className="flex items-center gap-1.5 text-xs text-fg-muted">
               <span>{language === 'ar' ? 'السعر ($):' : 'Price ($):'}</span>
               <input
                 type="number"
                 placeholder={language === 'ar' ? 'الأدنى' : 'Min'}
                 value={minPrice ?? ''}
                 onChange={(e) => setMinPrice(e.target.value ? Number(e.target.value) : undefined)}
-                className="w-16 bg-[#121418] border border-[#242831] text-xs text-[#F5F5F5] px-2 py-1.5 rounded outline-none focus:border-[#C9A961]"
+                className="w-16 bg-raised border border-line text-xs text-fg px-2 py-1.5 rounded outline-none focus:border-gold"
               />
               <span>—</span>
               <input
@@ -230,7 +230,7 @@ export const ShopPage: React.FC = () => {
                 placeholder={language === 'ar' ? 'الأعلى' : 'Max'}
                 value={maxPrice ?? ''}
                 onChange={(e) => setMaxPrice(e.target.value ? Number(e.target.value) : undefined)}
-                className="w-16 bg-[#121418] border border-[#242831] text-xs text-[#F5F5F5] px-2 py-1.5 rounded outline-none focus:border-[#C9A961]"
+                className="w-16 bg-raised border border-line text-xs text-fg px-2 py-1.5 rounded outline-none focus:border-gold"
               />
             </div>
 
@@ -239,32 +239,32 @@ export const ShopPage: React.FC = () => {
               onClick={() => setInStockOnly(!inStockOnly)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs border transition-colors cursor-pointer ${
                 inStockOnly
-                  ? 'border-[#C9A961] bg-[#C9A961]/10 text-[#C9A961]'
-                  : 'border-[#242831] bg-[#121418] text-[#9CA3AF] hover:text-[#F5F5F5]'
+                  ? 'border-gold bg-gold/10 text-gold'
+                  : 'border-line bg-raised text-fg-muted hover:text-fg'
               }`}
             >
               <div
                 className={`w-3 h-3 rounded flex items-center justify-center border ${
-                  inStockOnly ? 'bg-[#C9A961] border-[#C9A961]' : 'border-[#9CA3AF]'
+                  inStockOnly ? 'bg-gold border-gold' : 'border-fg-muted'
                 }`}
               >
-                {inStockOnly && <Check className="w-2.5 h-2.5 text-[#0F1113]" />}
+                {inStockOnly && <Check className="w-2.5 h-2.5 text-ink" />}
               </div>
               <span>{language === 'ar' ? 'المتوفر فقط' : 'In Stock'}</span>
             </button>
 
             {/* Sort Selector */}
-            <div className="flex items-center gap-1.5 text-xs bg-[#121418] border border-[#242831] rounded px-3 py-1.5 text-[#9CA3AF]">
-              <ArrowUpDown className="w-3.5 h-3.5 text-[#C9A961]" />
+            <div className="flex items-center gap-1.5 text-xs bg-raised border border-line rounded px-3 py-1.5 text-fg-muted">
+              <ArrowUpDown className="w-3.5 h-3.5 text-gold" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="bg-transparent text-[#F5F5F5] outline-none text-xs cursor-pointer"
+                className="bg-transparent text-fg outline-none text-xs cursor-pointer"
               >
-                <option value="newest" className="bg-[#171A1F]">{t.shop.sortNewest}</option>
-                <option value="price-asc" className="bg-[#171A1F]">{t.shop.sortPriceAsc}</option>
-                <option value="price-desc" className="bg-[#171A1F]">{t.shop.sortPriceDesc}</option>
-                <option value="popular" className="bg-[#171A1F]">{t.shop.sortPopular}</option>
+                <option value="newest" className="bg-surface">{t.shop.sortNewest}</option>
+                <option value="price-asc" className="bg-surface">{t.shop.sortPriceAsc}</option>
+                <option value="price-desc" className="bg-surface">{t.shop.sortPriceDesc}</option>
+                <option value="popular" className="bg-surface">{t.shop.sortPopular}</option>
               </select>
             </div>
           </div>
@@ -274,28 +274,28 @@ export const ShopPage: React.FC = () => {
       {/* Loading State */}
       {loadState === 'loading' && (
         <section className="flex items-center justify-center py-24">
-          <Loader2 className="w-10 h-10 text-[#C9A961] animate-spin" />
+          <Loader2 className="w-10 h-10 text-gold animate-spin" />
         </section>
       )}
 
       {/* Error State */}
       {loadState === 'error' && (
         <section>
-          <div className="py-20 text-center space-y-4 rounded-xl bg-[#171A1F] border border-[#242831] p-8 max-w-xl mx-auto my-8">
-            <div className="w-14 h-14 rounded-full bg-[#121418] border border-[#242831] flex items-center justify-center mx-auto text-[#C9A961]">
+          <div className="py-20 text-center space-y-4 rounded-xl bg-surface border border-line p-8 max-w-xl mx-auto my-8">
+            <div className="w-14 h-14 rounded-full bg-raised border border-line flex items-center justify-center mx-auto text-gold">
               <AlertTriangle className="w-7 h-7 opacity-90" />
             </div>
-            <h3 className="font-serif-luxury text-lg font-bold text-[#F5F5F5]">
+            <h3 className="font-serif-luxury text-lg font-bold text-fg">
               {language === 'ar' ? 'تعذّر تحميل المنتجات' : "Couldn't Load Products"}
             </h3>
             {error && (
-              <p className="text-xs text-[#9CA3AF] max-w-sm mx-auto leading-relaxed">
+              <p className="text-xs text-fg-muted max-w-sm mx-auto leading-relaxed">
                 {error}
               </p>
             )}
             <button
               onClick={handleRetry}
-              className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer"
+              className="px-6 py-2.5 rounded bg-gold text-ink hover:bg-gold-soft text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer"
             >
               {language === 'ar' ? 'إعادة المحاولة' : 'Retry'}
             </button>
@@ -314,7 +314,7 @@ export const ShopPage: React.FC = () => {
           />
 
           {totalPages > 1 && (
-            <div className="pt-8 border-t border-[#242831] flex items-center justify-between text-xs text-[#9CA3AF]">
+            <div className="pt-8 border-t border-line flex items-center justify-between text-xs text-fg-muted">
               <div>
                 {language === 'ar'
                   ? `عرض ${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, products.length)} من أصل ${products.length} قطعة`
@@ -334,8 +334,8 @@ export const ShopPage: React.FC = () => {
                       }}
                       className={`w-8 h-8 rounded text-xs font-mono font-medium transition-colors cursor-pointer ${
                         isActive
-                          ? 'bg-[#C9A961] text-[#0F1113] font-bold'
-                          : 'bg-[#171A1F] border border-[#242831] text-[#F5F5F5] hover:border-[#C9A961]'
+                          ? 'bg-gold text-ink font-bold'
+                          : 'bg-surface border border-line text-fg hover:border-gold'
                       }`}
                     >
                       {page}

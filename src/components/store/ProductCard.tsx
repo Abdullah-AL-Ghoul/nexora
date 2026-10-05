@@ -45,10 +45,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   return (
     <div
       onClick={handleCardClick}
-      className="group relative flex flex-col bg-[#171A1F] border border-[#242831] hover:border-[#C9A961]/40 rounded-lg overflow-hidden transition-all duration-300 cursor-pointer"
+      className="group relative flex flex-col bg-surface border border-line hover:border-gold/40 rounded-lg overflow-hidden transition-all duration-300 cursor-pointer"
     >
       {/* Product Image Stage */}
-      <div className="relative aspect-square w-full overflow-hidden bg-[#121418] flex items-center justify-center">
+      <div className="relative aspect-square w-full overflow-hidden bg-raised flex items-center justify-center">
         {primaryImage ? (
           <img
             src={primaryImage.url}
@@ -57,7 +57,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          <span className="font-serif-luxury text-sm text-[#9CA3AF]">{product.name}</span>
+          <span className="font-serif-luxury text-sm text-fg-muted">{product.name}</span>
         )}
 
         {/* Hover Quick Action Layer */}
@@ -65,16 +65,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={handleQuickView}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-[#171A1F]/95 hover:bg-[#242831] text-[#F5F5F5] hover:text-[#C9A961] border border-[#242831] shadow-xl text-xs font-medium tracking-wide transition-all cursor-pointer transform translate-y-2 group-hover:translate-y-0 duration-300"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-surface/95 hover:bg-line text-fg hover:text-gold border border-line shadow-xl text-xs font-medium tracking-wide transition-all cursor-pointer transform translate-y-2 group-hover:translate-y-0 duration-300"
               aria-label="Quick View"
             >
-              <Eye className="w-3.5 h-3.5 text-[#C9A961]" />
+              <Eye className="w-3.5 h-3.5 text-gold" />
               <span>{t.shop.quickView}</span>
             </button>
 
             <button
               onClick={handleQuickAdd}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-[#C9A961] hover:bg-[#E7D3A0] text-[#0F1113] font-semibold text-xs tracking-wide shadow-xl transition-all cursor-pointer transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-gold hover:bg-gold-soft text-ink font-semibold text-xs tracking-wide shadow-xl transition-all cursor-pointer transform translate-y-2 group-hover:translate-y-0 duration-300 delay-75"
               aria-label="Add Artifact to Shopping Bag"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -88,8 +88,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           onClick={handleWishlistToggle}
           className={`absolute top-3 right-3 rtl:right-auto rtl:left-3 p-2 rounded-full backdrop-blur-md transition-colors cursor-pointer ${
             isWishlisted
-              ? 'bg-[#C9A961] text-[#0F1113]'
-              : 'bg-[#171A1F]/80 text-[#F5F5F5] hover:text-[#C9A961] border border-[#242831]'
+              ? 'bg-gold text-ink'
+              : 'bg-surface/80 text-fg hover:text-gold border border-line'
           }`}
           aria-label={isWishlisted ? 'Remove from Wishlist' : 'Save to Wishlist'}
         >
@@ -107,39 +107,39 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       {/* Product Content Details */}
       <div className="flex flex-1 flex-col p-4">
         {/* Anti-Slop: Quiet unboxed metadata with typographic dot separator */}
-        <div className="flex items-center gap-2 text-xs text-[#9CA3AF] mb-1.5">
-          <span className="uppercase tracking-wider text-[11px] text-[#C9A961]/80 font-medium">
+        <div className="flex items-center gap-2 text-xs text-fg-muted mb-1.5">
+          <span className="uppercase tracking-wider text-[11px] text-gold/80 font-medium">
             {localizedCatName}
           </span>
-          <span aria-hidden="true" className="text-[#242831]">·</span>
-          <span className="font-mono text-[10px] text-[#9CA3AF]">{product.sku}</span>
+          <span aria-hidden="true" className="text-fg-faint">·</span>
+          <span className="font-mono text-[10px] text-fg-muted">{product.sku}</span>
         </div>
 
         {/* Product Title */}
-        <h3 className="font-medium text-sm text-[#F5F5F5] group-hover:text-[#C9A961] transition-colors line-clamp-1">
+        <h3 className="font-medium text-sm text-fg group-hover:text-gold transition-colors line-clamp-1">
           {product.name}
         </h3>
 
         {/* Quiet 1-line Tagline */}
-        <p className="text-xs text-[#9CA3AF] mt-1 line-clamp-1 leading-relaxed">
+        <p className="text-xs text-fg-muted mt-1 line-clamp-1 leading-relaxed">
           {product.tagline}
         </p>
 
         {/* Price & Variants line */}
-        <div className="mt-3 pt-3 border-t border-[#242831] flex items-center justify-between">
+        <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-[#F5F5F5]">
+            <span className="text-sm font-semibold text-fg">
               ${product.price.toLocaleString()}
             </span>
             {product.compareAtPrice && product.compareAtPrice > product.price && (
-              <span className="text-xs text-[#9CA3AF] line-through">
+              <span className="text-xs text-fg-muted line-through">
                 ${product.compareAtPrice.toLocaleString()}
               </span>
             )}
           </div>
 
           {product.variants.length > 0 && (
-            <span className="text-[11px] text-[#9CA3AF]">
+            <span className="text-[11px] text-fg-muted">
               {product.variants.length} {t.shop.options}
             </span>
           )}

@@ -26,16 +26,16 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
         {[...Array(8)].map((_, i) => (
           <div
             key={i}
-            className="rounded-lg bg-[#171A1F] border border-[#242831] overflow-hidden animate-pulse flex flex-col"
+            className="rounded-lg bg-surface border border-line overflow-hidden animate-pulse flex flex-col"
           >
-            <div className="aspect-square bg-[#121418]" />
+            <div className="aspect-square bg-raised" />
             <div className="p-4 space-y-3">
-              <div className="h-3 bg-[#242831] rounded w-1/3" />
-              <div className="h-4 bg-[#242831] rounded w-3/4" />
-              <div className="h-3 bg-[#242831] rounded w-full" />
-              <div className="pt-3 border-t border-[#242831] flex justify-between">
-                <div className="h-4 bg-[#242831] rounded w-1/4" />
-                <div className="h-4 bg-[#242831] rounded w-1/4" />
+              <div className="h-3 bg-line rounded w-1/3" />
+              <div className="h-4 bg-line rounded w-3/4" />
+              <div className="h-3 bg-line rounded w-full" />
+              <div className="pt-3 border-t border-line flex justify-between">
+                <div className="h-4 bg-line rounded w-1/4" />
+                <div className="h-4 bg-line rounded w-1/4" />
               </div>
             </div>
           </div>
@@ -46,18 +46,18 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
 
   if (products.length === 0) {
     return (
-      <div className="py-20 text-center space-y-4 rounded-xl bg-[#171A1F] border border-[#242831] p-8 max-w-xl mx-auto my-8">
-        <div className="w-14 h-14 rounded-full bg-[#121418] border border-[#242831] flex items-center justify-center mx-auto text-[#9CA3AF]">
+      <div className="py-20 text-center space-y-4 rounded-xl bg-surface border border-line p-8 max-w-xl mx-auto my-8">
+        <div className="w-14 h-14 rounded-full bg-raised border border-line flex items-center justify-center mx-auto text-fg-muted">
           <PackageX className="w-7 h-7 opacity-60" />
         </div>
-        <h3 className="font-serif-luxury text-lg font-bold text-[#F5F5F5]">{emptyTitle}</h3>
-        <p className="text-xs text-[#9CA3AF] max-w-sm mx-auto leading-relaxed">
+        <h3 className="font-serif-luxury text-lg font-bold text-fg">{emptyTitle}</h3>
+        <p className="text-xs text-fg-muted max-w-sm mx-auto leading-relaxed">
           {emptyDescription}
         </p>
         {onResetFilters && (
           <button
             onClick={onResetFilters}
-            className="px-6 py-2.5 rounded bg-[#C9A961] text-[#0F1113] hover:bg-[#E7D3A0] text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer"
+            className="px-6 py-2.5 rounded bg-gold text-ink hover:bg-gold-soft text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer"
           >
             Reset All Filters
           </button>

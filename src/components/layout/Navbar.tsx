@@ -50,14 +50,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
   const isAdmin = currentUser.role === 'ADMIN';
 
   return (
-    <header className="sticky top-0 z-40 bg-[#0F1113]/95 backdrop-blur-md border-b border-[#242831]">
+    <header className="sticky top-0 z-40 bg-ink/95 backdrop-blur-md border-b border-line">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           {/* Mobile menu trigger */}
           <div className="flex items-center gap-3 lg:hidden">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 text-[#9CA3AF] hover:text-[#F5F5F5] focus:outline-none cursor-pointer"
+              className="p-2 text-fg-muted hover:text-fg focus:outline-none cursor-pointer"
               aria-label="Toggle Navigation"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -70,10 +70,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
               onClick={() => navigate('home')}
               className="flex items-baseline gap-1.5 group text-left cursor-pointer"
             >
-              <span className="font-serif-luxury text-2xl font-bold tracking-[0.2em] text-[#F5F5F5] group-hover:text-[#C9A961] transition-colors">
+              <span className="font-serif-luxury text-2xl font-bold tracking-[0.2em] text-fg group-hover:text-gold transition-colors">
                 NEXORA
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#C9A961]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-gold" />
             </button>
 
             {/* Desktop Navigation */}
@@ -85,8 +85,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 }}
                 className={`transition-colors py-1 cursor-pointer ${
                   currentRoute === 'shop'
-                    ? 'text-[#C9A961] border-b-2 border-[#C9A961]'
-                    : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                    ? 'text-gold border-b-2 border-gold'
+                    : 'text-fg-muted hover:text-fg'
                 }`}
               >
                 {t.nav.collection}
@@ -95,8 +95,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 onClick={() => navigate('categories')}
                 className={`transition-colors py-1 cursor-pointer ${
                   currentRoute === 'categories'
-                    ? 'text-[#C9A961] border-b-2 border-[#C9A961]'
-                    : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                    ? 'text-gold border-b-2 border-gold'
+                    : 'text-fg-muted hover:text-fg'
                 }`}
               >
                 {t.nav.categories}
@@ -106,7 +106,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   setSelectedCategory('all');
                   navigate('shop', { filter: 'trending' });
                 }}
-                className="text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors py-1 cursor-pointer"
+                className="text-fg-muted hover:text-fg transition-colors py-1 cursor-pointer"
               >
                 {t.nav.trending}
               </button>
@@ -114,8 +114,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 onClick={() => navigate('about')}
                 className={`transition-colors py-1 cursor-pointer ${
                   currentRoute === 'about'
-                    ? 'text-[#C9A961] border-b-2 border-[#C9A961]'
-                    : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                    ? 'text-gold border-b-2 border-gold'
+                    : 'text-fg-muted hover:text-fg'
                 }`}
               >
                 {t.nav.philosophy}
@@ -126,14 +126,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
           {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-4">
             {/* Bilingual Language Switcher */}
-            <div className="flex items-center rounded-md bg-[#171A1F] border border-[#242831] p-0.5 text-xs font-semibold">
+            <div className="flex items-center rounded-md bg-surface border border-line p-0.5 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setLanguage('ar')}
                 className={`px-2 py-1 rounded transition-colors cursor-pointer ${
                   language === 'ar'
-                    ? 'bg-[#C9A961] text-[#0F1113] font-bold shadow-sm'
-                    : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                    ? 'bg-gold text-ink font-bold shadow-sm'
+                    : 'text-fg-muted hover:text-fg'
                 }`}
                 title="التحويل إلى اللغة العربية"
               >
@@ -144,8 +144,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 onClick={() => setLanguage('en')}
                 className={`px-2 py-1 rounded transition-colors cursor-pointer ${
                   language === 'en'
-                    ? 'bg-[#C9A961] text-[#0F1113] font-bold shadow-sm'
-                    : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                    ? 'bg-gold text-ink font-bold shadow-sm'
+                    : 'text-fg-muted hover:text-fg'
                 }`}
                 title="Switch to English"
               >
@@ -163,12 +163,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t.nav.searchPlaceholder}
                     autoFocus
-                    className="w-48 sm:w-64 bg-[#171A1F] border border-[#C9A961] text-xs text-[#F5F5F5] px-3 py-2 rounded-md outline-none placeholder:text-gray-500"
+                    className="w-48 sm:w-64 bg-surface border border-gold text-xs text-fg px-3 py-2 rounded-md outline-none placeholder:text-fg-faint"
                   />
                   <button
                     type="button"
                     onClick={() => setIsSearchOpen(false)}
-                    className="ml-2 rtl:ml-0 rtl:mr-2 text-xs text-gray-400 hover:text-white cursor-pointer"
+                    className="ml-2 rtl:ml-0 rtl:mr-2 text-xs text-fg-faint hover:text-white cursor-pointer"
                   >
                     {t.nav.searchCancel}
                   </button>
@@ -176,7 +176,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
               ) : (
                 <button
                   onClick={() => setIsSearchOpen(true)}
-                  className="p-2 text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors cursor-pointer"
+                  className="p-2 text-fg-muted hover:text-fg transition-colors cursor-pointer"
                   aria-label="Search Catalog"
                 >
                   <Search className="w-5 h-5" />
@@ -187,12 +187,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
             {/* Live Market Intelligence */}
             <button
               onClick={onOpenMarketIntelligence}
-              className="p-2 text-[#9CA3AF] hover:text-[#C9A961] transition-colors cursor-pointer flex items-center gap-1.5"
+              className="p-2 text-fg-muted hover:text-gold transition-colors cursor-pointer flex items-center gap-1.5"
               title={t.nav.intelligence}
               aria-label="Market Intelligence"
             >
-              <Globe className="w-5 h-5 text-[#C9A961]" />
-              <span className="hidden xl:inline text-xs font-medium text-[#C9A961]">
+              <Globe className="w-5 h-5 text-gold" />
+              <span className="hidden xl:inline text-xs font-medium text-gold">
                 {t.nav.intelligence}
               </span>
             </button>
@@ -200,12 +200,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
             {/* Wishlist */}
             <button
               onClick={() => navigate('wishlist')}
-              className="relative p-2 text-[#9CA3AF] hover:text-[#F5F5F5] transition-colors cursor-pointer"
+              className="relative p-2 text-fg-muted hover:text-fg transition-colors cursor-pointer"
               aria-label="Wishlist"
             >
               <Heart className="w-5 h-5" />
               {wishlistCount > 0 && (
-                <span className="absolute top-1 right-1 rtl:right-auto rtl:left-1 w-4 h-4 bg-[#C9A961] text-[#0F1113] rounded-full text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute top-1 right-1 rtl:right-auto rtl:left-1 w-4 h-4 bg-gold text-ink rounded-full text-[10px] font-bold flex items-center justify-center">
                   {wishlistCount}
                 </span>
               )}
@@ -214,12 +214,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
             {/* Cart / Bag Button */}
             <button
               onClick={onOpenCart}
-              className="relative p-2 text-[#9CA3AF] hover:text-[#C9A961] transition-colors cursor-pointer flex items-center gap-1.5"
+              className="relative p-2 text-fg-muted hover:text-gold transition-colors cursor-pointer flex items-center gap-1.5"
               aria-label="Shopping Bag"
             >
               <ShoppingBag className="w-5 h-5" />
               {itemCount > 0 && (
-                <span className="w-5 h-5 bg-[#C9A961] text-[#0F1113] rounded-full text-[11px] font-bold flex items-center justify-center">
+                <span className="w-5 h-5 bg-gold text-ink rounded-full text-[11px] font-bold flex items-center justify-center">
                   {itemCount}
                 </span>
               )}
@@ -229,10 +229,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
             {isAdmin && (
               <button
                 onClick={() => navigate('admin-dashboard')}
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-[#C9A961]/15 border border-[#C9A961]/60 text-[#C9A961] hover:bg-[#C9A961]/25 transition-colors cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-gold/15 border border-gold/60 text-gold hover:bg-gold/25 transition-colors cursor-pointer shadow-sm"
                 title={t.nav.dashboard}
               >
-                <LayoutDashboard className="w-3.5 h-3.5 text-[#C9A961]" />
+                <LayoutDashboard className="w-3.5 h-3.5 text-gold" />
                 <span className="hidden sm:inline">{t.nav.dashboard}</span>
               </button>
             )}
@@ -244,7 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   logout();
                   navigate('home');
                 }}
-                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-[#171A1F] border border-[#242831] hover:border-rose-500/50 text-[#9CA3AF] hover:text-rose-400 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md bg-surface border border-line hover:border-danger/50 text-fg-muted hover:text-danger transition-colors cursor-pointer"
                 title={language === 'ar' ? 'تسجيل الخروج' : 'Sign Out'}
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -255,8 +255,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 onClick={() => navigate('login')}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors cursor-pointer ${
                   currentRoute === 'login'
-                    ? 'bg-[#C9A961] text-[#0F1113] border-[#C9A961]'
-                    : 'bg-[#171A1F] border-[#242831] text-[#F5F5F5] hover:border-[#C9A961] hover:text-[#C9A961]'
+                    ? 'bg-gold text-ink border-gold'
+                    : 'bg-surface border-line text-fg hover:border-gold hover:text-gold'
                 }`}
                 title={t.nav.login}
               >
@@ -270,7 +270,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden border-t border-[#242831] bg-[#0F1113] px-4 pt-3 pb-6 space-y-4">
+        <div className="lg:hidden border-t border-line bg-ink px-4 pt-3 pb-6 space-y-4">
           <div className="flex flex-col space-y-2 text-sm font-medium">
             <button
               onClick={() => {
@@ -278,7 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 navigate('shop');
                 setIsMobileMenuOpen(false);
               }}
-              className="text-left rtl:text-right py-2 text-[#9CA3AF] hover:text-[#C9A961]"
+              className="text-left rtl:text-right py-2 text-fg-muted hover:text-gold"
             >
               {t.nav.collection}
             </button>
@@ -287,7 +287,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 navigate('categories');
                 setIsMobileMenuOpen(false);
               }}
-              className="text-left rtl:text-right py-2 text-[#9CA3AF] hover:text-[#C9A961]"
+              className="text-left rtl:text-right py-2 text-fg-muted hover:text-gold"
             >
               {t.nav.categories}
             </button>
@@ -296,7 +296,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                 navigate('about');
                 setIsMobileMenuOpen(false);
               }}
-              className="text-left rtl:text-right py-2 text-[#9CA3AF] hover:text-[#C9A961]"
+              className="text-left rtl:text-right py-2 text-fg-muted hover:text-gold"
             >
               {t.nav.philosophy}
             </button>
@@ -308,7 +308,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                     navigate('admin-dashboard');
                     setIsMobileMenuOpen(false);
                   }}
-                  className="text-left rtl:text-right py-2 text-[#C9A961] font-semibold flex items-center gap-2"
+                  className="text-left rtl:text-right py-2 text-gold font-semibold flex items-center gap-2"
                 >
                   <LayoutDashboard className="w-4 h-4" />
                   <span>{t.nav.dashboard}</span>
@@ -319,7 +319,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                     setIsMobileMenuOpen(false);
                     navigate('home');
                   }}
-                  className="text-left rtl:text-right py-2 text-rose-400 hover:text-rose-300 font-medium flex items-center gap-2"
+                  className="text-left rtl:text-right py-2 text-danger hover:text-rose-300 font-medium flex items-center gap-2"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>{language === 'ar' ? 'تسجيل الخروج' : 'Sign Out'}</span>
@@ -331,20 +331,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   navigate('login');
                   setIsMobileMenuOpen(false);
                 }}
-                className="text-left rtl:text-right py-2 text-[#F5F5F5] hover:text-[#C9A961] flex items-center gap-2"
+                className="text-left rtl:text-right py-2 text-fg hover:text-gold flex items-center gap-2"
               >
-                <LogIn className="w-4 h-4 text-[#C9A961]" />
+                <LogIn className="w-4 h-4 text-gold" />
                 <span>{t.nav.login}</span>
               </button>
             )}
 
             {/* Mobile language switch */}
-            <div className="pt-2 border-t border-[#242831] flex items-center justify-between gap-3">
-              <span className="text-xs text-[#9CA3AF] flex items-center gap-1.5">
-                <Globe className="w-4 h-4 text-[#C9A961]" />
+            <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
+              <span className="text-xs text-fg-muted flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-gold" />
                 <span>{language === 'ar' ? 'اللغة / Language:' : 'Language / اللغة:'}</span>
               </span>
-              <div className="flex items-center rounded-md bg-[#171A1F] border border-[#242831] p-0.5 text-xs font-semibold">
+              <div className="flex items-center rounded-md bg-surface border border-line p-0.5 text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => {
@@ -353,8 +353,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   }}
                   className={`px-3 py-1.5 rounded transition-colors ${
                     language === 'ar'
-                      ? 'bg-[#C9A961] text-[#0F1113] font-bold'
-                      : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                      ? 'bg-gold text-ink font-bold'
+                      : 'text-fg-muted hover:text-fg'
                   }`}
                 >
                   العربية
@@ -367,8 +367,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   }}
                   className={`px-3 py-1.5 rounded transition-colors ${
                     language === 'en'
-                      ? 'bg-[#C9A961] text-[#0F1113] font-bold'
-                      : 'text-[#9CA3AF] hover:text-[#F5F5F5]'
+                      ? 'bg-gold text-ink font-bold'
+                      : 'text-fg-muted hover:text-fg'
                   }`}
                 >
                   English
