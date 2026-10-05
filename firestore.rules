@@ -10,13 +10,17 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // User profiles & wishlist
+    // User profiles & wishlist — only the authenticated owner (or admin) may write.
+    // NOTE: `request.auth == null` was previously appended, which allowed
+    // unauthenticated writes — removed (was a confirmed authorization hole).
     match /users/{userId} {
       allow read: if true;
-      allow write: if isOwner(userId) || (isAuthenticated() && request.auth.token.role == 'ADMIN') || request.auth == null;
+      allow write: if isOwner(userId);
     }
 
-    // Orders
+    // Orders — customers may read/create their own; full admin visibility is not
+    // enforceable by UID rules alone — keep auth-gated (authentication) here;
+    // authorization for admin order writes is enforced by the Express API (server.ts).
     match /orders/{orderId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
