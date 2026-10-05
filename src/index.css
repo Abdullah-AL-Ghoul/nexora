@@ -1,51 +1,148 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   NEXORA Design Tokens — single source of truth (see DESIGN.md).
+   Registered with Tailwind v4 so utilities like `bg-ink`, `text-gold`,
+   `border-line`, `bg-surface`, `shad-card` work everywhere.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Surfaces */
+  --color-ink: #0f1113;
+  --color-surface: #171a1f;
+  --color-elevated: #1e2229;
+  --color-raised: #121418;
+  --color-line: #242831;
+  --color-line-strong: #343a47;
+
+  /* Brand */
+  --color-gold: #c9a961;
+  --color-gold-soft: #e7d3a0;
+
+  /* Text */
+  --color-fg: #f5f5f5;
+  --color-fg-muted: #9ca3af;
+  --color-fg-faint: #6b7280;
+
+  /* Status */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
+  --color-info: #7dd3fc;
+
+  /* Typography */
+  --font-display: "Cinzel", "Cairo", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", "Cairo", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+  /* Radius scale */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 4px 12px rgb(0 0 0 / 0.5);
+  --shadow-gold: 0 0 0 1px rgb(201 169 97 / 0.25), 0 8px 30px -12px rgb(201 169 97 / 0.35);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Breakpoints (default Tailwind, explicit for reference) */
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 96rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────────────────── */
 @layer base {
-  :root {
-    --bg-primary: #0F1113;
-    --bg-surface: #171A1F;
-    --bg-surface-elevated: #1E2229;
-    --border-subtle: #242831;
-    --border-active: #C9A961;
-    --accent-gold: #C9A961;
-    --accent-gold-light: #E7D3A0;
-    --text-primary: #F5F5F5;
-    --text-muted: #9CA3AF;
+  html {
+    scroll-behavior: smooth;
+    background-color: var(--color-ink);
+    color: var(--color-fg);
   }
-
   body {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #0F1113;
-    color: #F5F5F5;
+    font-family: var(--font-sans);
+    background-color: var(--color-ink);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-
   [dir="rtl"] body {
-    font-family: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
+    font-family: "Cairo", "Tajawal", "Plus Jakarta Sans", system-ui, sans-serif;
   }
-
-  h1, h2, h3, .font-serif-luxury {
-    font-family: 'Cinzel', Georgia, serif;
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
     letter-spacing: -0.01em;
   }
-
-  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] .font-serif-luxury {
-    font-family: 'Cairo', system-ui, sans-serif;
+  [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] .font-display {
+    font-family: "Cairo", system-ui, sans-serif;
     letter-spacing: 0;
+  }
+  ::selection {
+    background: rgb(201 169 97 / 0.3);
+    color: var(--color-gold-soft);
+  }
+  /* Visible, consistent focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Custom dark scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--color-ink); }
+  ::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-gold); }
+  /* Skip-link focus visibility (used by App) */
+  .skip-link:focus {
+    position: fixed; top: 0.75rem; left: 0.75rem; z-index: 60;
+    background: var(--color-gold); color: var(--color-ink);
+    padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 600; font-size: 0.875rem;
   }
 }
 
-/* Custom scrollbars for dark luxury theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ─────────────────────────────────────────────────────────────────────────
+   Toast + overlay animations (real keyframes — replaces obsolete animate-in utilities)
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-::-webkit-scrollbar-track {
-  background: #0F1113;
+@keyframes toast-out {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(6px); }
 }
-::-webkit-scrollbar-thumb {
-  background: #242831;
-  border-radius: 3px;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #C9A961;
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -468px 0; }
+  100% { background-position: 468px 0; }
+}
+
+/* Respect reduced-motion globally */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
