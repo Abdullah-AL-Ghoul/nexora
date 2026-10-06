@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { revalidateTag } from "next/cache";
 
 import { prisma } from "@/lib/db";
-import { CATALOG_TAG } from "@/lib/cache";
+import { CATALOG_TAG, ADMIN_DASHBOARD_TAG } from "@/lib/cache";
 import { checkCoupon, quoteCartItems } from "@/lib/cart/quote";
 import { computeDiscount, formatCartTotals } from "@/lib/cart/pricing";
 import { resolveShipping, type ShippingMethod } from "@/lib/checkout/shipping";
@@ -190,6 +190,7 @@ export async function createOrder(
         },
         select: orderSelect,
       });
+      revalidateTag(ADMIN_DASHBOARD_TAG, "max");
       return { ok: true, order };
     } catch (error) {
       // Two submissions with the same key raced past the findUnique — the
@@ -255,54 +256,99 @@ export async function markOrderPaid(orderId: string): Promise<FulfillmentResult>
         data: { status: "SUCCEEDED" },
       });
 
+      // Aggregate required stock decrements to minimize database round trips and locks
+      const variantDeltas = new Map<string, number>();
+      const productDeltas = new Map<string, number>();
+
       for (const item of order.items) {
-        let balanceAfter: number | null = null;
-
         if (item.variantId) {
-          const updated = await tx.productVariant.updateMany({
-            where: { id: item.variantId, stock: { gte: item.quantity } },
-            data: { stock: { decrement: item.quantity } },
-          });
-          if (updated.count === 0) {
-            throw new FulfillmentError(
-              "INSUFFICIENT_STOCK",
-              `Variant ${item.variantId} has less stock than ${item.quantity}`
-            );
-          }
-          const variant = await tx.productVariant.findUnique({
-            where: { id: item.variantId },
-            select: { stock: true },
-          });
-          balanceAfter = variant?.stock ?? null;
+          variantDeltas.set(item.variantId, (variantDeltas.get(item.variantId) ?? 0) + item.quantity);
         } else if (item.productId) {
-          const updated = await tx.product.updateMany({
-            where: { id: item.productId, stock: { gte: item.quantity } },
-            data: { stock: { decrement: item.quantity } },
-          });
-          if (updated.count === 0) {
-            throw new FulfillmentError(
-              "INSUFFICIENT_STOCK",
-              `Product ${item.productId} has less stock than ${item.quantity}`
-            );
-          }
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: { stock: true },
-          });
-          balanceAfter = product?.stock ?? null;
+          productDeltas.set(item.productId, (productDeltas.get(item.productId) ?? 0) + item.quantity);
         }
+      }
 
-        await tx.inventoryTransaction.create({
-          data: {
+      // Sort keys deterministically to prevent deadlocks across concurrent fulfillment transactions
+      const sortedVariantIds = Array.from(variantDeltas.keys()).sort();
+      const sortedProductIds = Array.from(productDeltas.keys()).sort();
+
+      const variantBalances = new Map<string, number>();
+      for (const variantId of sortedVariantIds) {
+        const qty = variantDeltas.get(variantId)!;
+        const updated = await tx.productVariant.updateMany({
+          where: { id: variantId, stock: { gte: qty } },
+          data: { stock: { decrement: qty } },
+        });
+        if (updated.count === 0) {
+          throw new FulfillmentError(
+            "INSUFFICIENT_STOCK",
+            `Variant ${variantId} has less stock than ${qty}`
+          );
+        }
+        const variant = await tx.productVariant.findUnique({
+          where: { id: variantId },
+          select: { stock: true },
+        });
+        if (variant) {
+          variantBalances.set(variantId, variant.stock);
+        }
+      }
+
+      const productBalances = new Map<string, number>();
+      for (const productId of sortedProductIds) {
+        const qty = productDeltas.get(productId)!;
+        const updated = await tx.product.updateMany({
+          where: { id: productId, stock: { gte: qty } },
+          data: { stock: { decrement: qty } },
+        });
+        if (updated.count === 0) {
+          throw new FulfillmentError(
+            "INSUFFICIENT_STOCK",
+            `Product ${productId} has less stock than ${qty}`
+          );
+        }
+        const product = await tx.product.findUnique({
+          where: { id: productId },
+          select: { stock: true },
+        });
+        if (product) {
+          productBalances.set(productId, product.stock);
+        }
+      }
+
+      // Batch insert inventory transactions with sequential balance tracking
+      const currentVariantBalances = new Map<string, number>();
+      for (const [vid, finalBal] of variantBalances) {
+        currentVariantBalances.set(vid, finalBal + (variantDeltas.get(vid) ?? 0));
+      }
+      const currentProductBalances = new Map<string, number>();
+      for (const [pid, finalBal] of productBalances) {
+        currentProductBalances.set(pid, finalBal + (productDeltas.get(pid) ?? 0));
+      }
+
+      await tx.inventoryTransaction.createMany({
+        data: order.items.map((item) => {
+          let balanceAfter: number | null = null;
+          if (item.variantId && currentVariantBalances.has(item.variantId)) {
+            const nextBal = currentVariantBalances.get(item.variantId)! - item.quantity;
+            currentVariantBalances.set(item.variantId, nextBal);
+            balanceAfter = nextBal;
+          } else if (item.productId && currentProductBalances.has(item.productId)) {
+            const nextBal = currentProductBalances.get(item.productId)! - item.quantity;
+            currentProductBalances.set(item.productId, nextBal);
+            balanceAfter = nextBal;
+          }
+
+          return {
             productId: item.productId,
             variantId: item.variantId,
             delta: -item.quantity,
-            reason: "PURCHASE",
+            reason: "PURCHASE" as const,
             balanceAfter,
             note: `Order ${order.orderNumber}`,
-          },
-        });
-      }
+          };
+        }),
+      });
 
       if (order.couponCode) {
         const coupon = await tx.coupon.findUnique({
@@ -339,6 +385,7 @@ export async function markOrderPaid(orderId: string): Promise<FulfillmentResult>
     throw error;
   } finally {
     revalidateTag(CATALOG_TAG, "max");
+    revalidateTag(ADMIN_DASHBOARD_TAG, "max");
   }
 }
 
@@ -360,6 +407,7 @@ export async function cancelPendingOrder(orderId: string): Promise<boolean> {
       data: { status: "FAILED" },
     });
     revalidateTag(CATALOG_TAG, "max");
+    revalidateTag(ADMIN_DASHBOARD_TAG, "max");
     return true;
   });
 }
@@ -418,6 +466,7 @@ export async function refundOrder(orderId: string): Promise<boolean> {
     }
 
     revalidateTag(CATALOG_TAG, "max");
+    revalidateTag(ADMIN_DASHBOARD_TAG, "max");
     return true;
   });
 }

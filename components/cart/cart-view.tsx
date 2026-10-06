@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/catalog/empty-state";
 import { selectCartCount, useCartStore } from "@/lib/cart/store";
 import { formatPrice } from "@/lib/format";
+import { FREE_SHIPPING_THRESHOLD } from "@/lib/checkout/shipping";
 
 type QuoteLine = {
   productId: string;
@@ -169,6 +170,8 @@ export function CartView() {
   const subtotal = items.length > 0 ? quote?.subtotal ?? 0 : 0;
   const discount = activeApplied?.discount ?? 0;
   const total = subtotal - discount;
+  const freeShippingProgress = Math.min(100, Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100));
+  const remainingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
 
   if (!hydrated) return <CartSkeleton />;
 
@@ -275,9 +278,9 @@ export function CartView() {
                   <Image
                     src={line.imageUrl}
                     alt={line.name}
-                    width={80}
-                    height={80}
-                    className="size-20 object-cover"
+                    fill
+                    sizes="80px"
+                    className="object-cover"
                   />
                 ) : null}
               </Link>
@@ -344,6 +347,26 @@ export function CartView() {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Order summary
           </h2>
+
+          {/* Dynamic Free Shipping Threshold Tracker */}
+          <div className="mt-3 rounded-lg border border-border/70 bg-muted/40 p-3">
+            <div className="flex items-center justify-between text-xs">
+              {subtotal >= FREE_SHIPPING_THRESHOLD ? (
+                <span className="font-medium text-primary">✨ You unlocked Free Shipping!</span>
+              ) : (
+                <span>
+                  Add <strong className="text-primary font-semibold">{formatPrice(remainingForFreeShipping)}</strong> more for free shipping
+                </span>
+              )}
+              <span className="font-mono text-[11px] text-muted-foreground">{freeShippingProgress}%</span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-gradient-to-r from-primary/80 to-primary transition-all duration-500 ease-out"
+                style={{ width: `${freeShippingProgress}%` }}
+              />
+            </div>
+          </div>
 
           {activeApplied ? (
             <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm">

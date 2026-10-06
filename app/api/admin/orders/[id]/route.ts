@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
 import { canTransition, restockOn } from "@/lib/admin/order-status";
-import { CATALOG_TAG } from "@/lib/cache";
+import { CATALOG_TAG, ADMIN_DASHBOARD_TAG } from "@/lib/cache";
 import { requireApiRole } from "@/lib/auth/api-guards";
 import { STAFF_ROLES } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
@@ -116,6 +116,7 @@ export async function PATCH(
 
     // Status changes can restock — the public catalog reflects stock.
     revalidateTag(CATALOG_TAG, "max");
+    revalidateTag(ADMIN_DASHBOARD_TAG, "max");
     return NextResponse.json({ order: updated });
   } catch {
     return NextResponse.json({ error: "Unable to update order." }, { status: 500 });

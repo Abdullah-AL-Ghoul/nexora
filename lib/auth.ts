@@ -20,7 +20,17 @@ import { getPublicEnv } from "@/lib/env";
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
-  trustedOrigins: [new URL(getPublicEnv().NEXT_PUBLIC_APP_URL).origin],
+  trustedOrigins: [
+    new URL(getPublicEnv().NEXT_PUBLIC_APP_URL).origin,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3002",
+    "http://localhost:3100",
+    "http://127.0.0.1:3100",
+  ],
   rateLimit: {
     enabled: true,
     window: 60,

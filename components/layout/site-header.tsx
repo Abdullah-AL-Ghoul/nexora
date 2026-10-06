@@ -26,6 +26,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { authClient } from "@/lib/auth-client";
+import { SearchDialog } from "@/components/search/search-dialog";
 
 export type HeaderUser = { name: string; email: string } | null;
 
@@ -44,6 +45,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <>
@@ -175,10 +177,11 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={true}
                 className={cn(
                   "relative py-1 text-sm font-medium transition-colors",
                   isActivePath(pathname, item.href)
-                    ? "text-primary"
+                    ? "text-primary font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 )}
                 aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
@@ -188,11 +191,29 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
             ))}
           </nav>
 
-          <div className="flex items-center gap-1">
-            <Button asChild variant="ghost" size="icon" aria-label="Search">
-              <Link href="/search">
-                <Search className="size-5" aria-hidden="true" />
-              </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Open search dialog (Press Cmd+K or Ctrl+K)"
+              className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-all hover:border-primary/50 hover:bg-muted/70 hover:text-foreground cursor-pointer"
+            >
+              <Search className="size-3.5 text-primary" aria-hidden="true" />
+              <span>Search catalog…</span>
+              <kbd className="rounded border border-border/80 bg-background/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-xs">
+                ⌘K
+              </kbd>
+            </button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Search"
+              className="sm:hidden"
+              onClick={() => setSearchOpen(true)}
+            >
+              <Search className="size-5" aria-hidden="true" />
             </Button>
 
             <Button asChild variant="ghost" size="icon" aria-label="Wishlist">
@@ -202,6 +223,8 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
             </Button>
 
             <CartButton />
+
+            <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
             {user ? (
               <DropdownMenu>

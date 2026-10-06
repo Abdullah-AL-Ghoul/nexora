@@ -16,12 +16,16 @@ export type CartStore = {
   items: StoredCartItem[];
   couponCode: string | null;
   _hasHydrated: boolean;
+  isDrawerOpen: boolean;
   addItem: (item: StoredCartItem) => void;
   setQty: (productId: string, variantId: string | null, qty: number) => void;
   removeItem: (productId: string, variantId: string | null) => void;
   clear: () => void;
   setCoupon: (code: string | null) => void;
   setHydrated: (value: boolean) => void;
+  openDrawer: () => void;
+  closeDrawer: () => void;
+  toggleDrawer: () => void;
 };
 
 function sameLine(item: StoredCartItem, productId: string, variantId: string | null): boolean {
@@ -34,6 +38,11 @@ export const useCartStore = create<CartStore>()(
       items: [],
       couponCode: null,
       _hasHydrated: false,
+      isDrawerOpen: false,
+
+      openDrawer: () => set({ isDrawerOpen: true }),
+      closeDrawer: () => set({ isDrawerOpen: false }),
+      toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
 
       addItem: (incoming) =>
         set((state) => {

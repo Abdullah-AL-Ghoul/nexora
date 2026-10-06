@@ -69,6 +69,28 @@ const ORDER_BY: Record<
   rating: [{ ratingAvg: "desc" }, { ratingCount: "desc" }],
 };
 
+export function normalizeProductImageUrl(url: string | null | undefined): string {
+  if (!url) return "/images/products/placeholder.webp";
+  if (url.includes("picsum.photos")) {
+    const match = url.match(/seed\/nexora-([a-z0-9-]+)-(\d+)/);
+    if (match) {
+      return `/images/products/${match[1]}-${match[2]}.webp`;
+    }
+    return "/images/products/placeholder.webp";
+  }
+  return url;
+}
+
+function mapCardImages(product: ProductCardData): ProductCardData {
+  return {
+    ...product,
+    images: product.images.map((img) => ({
+      ...img,
+      url: normalizeProductImageUrl(img.url),
+    })),
+  };
+}
+
 async function getCatalogProductsUncached(params: CatalogParams): Promise<CatalogResult> {
   const where = buildWhere(params);
   const skip = (params.page - 1) * PRODUCTS_PER_PAGE;
@@ -85,7 +107,7 @@ async function getCatalogProductsUncached(params: CatalogParams): Promise<Catalo
   ]);
 
   return {
-    products,
+    products: products.map(mapCardImages),
     total,
     page: params.page,
     pageCount: Math.max(1, Math.ceil(total / PRODUCTS_PER_PAGE)),
@@ -130,6 +152,10 @@ async function getProductBySlugUncached(slug: string) {
   if (product) {
     return {
       ...product,
+      images: product.images.map((img) => ({
+        ...img,
+        url: normalizeProductImageUrl(img.url),
+      })),
       reviews: product.reviews.map((review) => ({
         ...review,
         createdAt: review.createdAt.toISOString(),
@@ -180,14 +206,17 @@ async function getCategoriesUncached(): Promise<CategoryCard[]> {
     }
   }
 
-  return categories.map((category) => ({
-    id: category.id,
-    name: category.name,
-    slug: category.slug,
-    description: category.description,
-    productCount: category._count.products,
-    imageUrl: category.imageUrl ?? fallbackByCategory.get(category.id) ?? null,
-  }));
+  return categories.map((category) => {
+    const rawUrl = category.imageUrl ?? fallbackByCategory.get(category.id) ?? null;
+    return {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      productCount: category._count.products,
+      imageUrl: rawUrl ? normalizeProductImageUrl(rawUrl) : null,
+    };
+  });
 }
 
 export function getCategoryBySlug(slug: string) {
@@ -294,9 +323,9 @@ async function getHomeSectionsUncached(): Promise<HomeSections> {
 
   return {
     featuredCategories: categories.slice(0, 6),
-    trending: trending.slice(0, 8),
-    offers: offerProducts,
-    bestSellers: bestSellers.slice(0, 8),
+    trending: trending.slice(0, 8).map(mapCardImages),
+    offers: offerProducts.map(mapCardImages),
+    bestSellers: bestSellers.slice(0, 8).map(mapCardImages),
     stats: {
       productCount,
       categoryCount: categories.length,
@@ -358,7 +387,7 @@ async function getRelatedProductsUncached(
     include: cardInclude,
   });
 
-  if (sameCategory.length >= take) return sameCategory;
+  if (sameCategory.length >= take) return sameCategory.map(mapCardImages);
 
   const filler = await prisma.product.findMany({
     where: {
@@ -370,5 +399,5 @@ async function getRelatedProductsUncached(
     include: cardInclude,
   });
 
-  return [...sameCategory, ...filler];
+  return [...sameCategory, ...filler].map(mapCardImages);
 }

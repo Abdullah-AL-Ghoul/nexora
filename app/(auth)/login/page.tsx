@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/guards";
 import { LoginForm } from "@/components/auth/login-form";
@@ -22,7 +23,9 @@ export default async function LoginPage({
         <h1 className="text-xl font-semibold text-foreground">Welcome back</h1>
         <p className="text-sm text-muted-foreground">Sign in to your NEXORA account</p>
       </div>
-      <LoginForm redirectTo={safeRedirect} />
+      <Suspense fallback={<div className="h-48 flex items-center justify-center text-xs text-muted-foreground">Loading login form…</div>}>
+        <LoginForm redirectTo={safeRedirect} />
+      </Suspense>
     </div>
   );
 }

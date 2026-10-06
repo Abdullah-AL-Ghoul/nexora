@@ -5,9 +5,9 @@ import { notFound } from "next/navigation";
 import { Price } from "@/components/product/price";
 import { ProductActions } from "@/components/product/product-actions";
 import { ProductGallery } from "@/components/product/product-gallery";
-import { ProductGrid } from "@/components/product/product-grid";
+import { ProductTabs } from "@/components/product/product-tabs";
 import { RatingStars } from "@/components/product/rating-stars";
-import { ReviewSection } from "@/components/product/review-section";
+import { RelatedProducts } from "@/components/product/related-products";
 import { getSession } from "@/lib/auth/guards";
 import {
   getProductBySlug,
@@ -15,6 +15,7 @@ import {
   getReviewStats,
 } from "@/lib/queries/catalog";
 import { getWishlistProductIds } from "@/lib/queries/wishlist";
+import { getPublicEnv } from "@/lib/env";
 
 export async function generateMetadata({
   params,
@@ -25,8 +26,14 @@ export async function generateMetadata({
   const product = await getProductBySlug(slug);
   if (!product) return { title: "Product" };
 
+  const appUrl = getPublicEnv().NEXT_PUBLIC_APP_URL;
   const description = product.description.slice(0, 160);
-  const image = product.images[0]?.url ?? undefined;
+  const rawImage = product.images[0]?.url;
+  const image = rawImage
+    ? rawImage.startsWith("http")
+      ? rawImage
+      : `${appUrl}${rawImage}`
+    : undefined;
 
   return {
     title: product.name,
@@ -67,6 +74,7 @@ export default async function ProductPage({
   const product = await getProductBySlug(slug);
   if (!product) notFound();
 
+  const appUrl = getPublicEnv().NEXT_PUBLIC_APP_URL;
   const session = await getSession();
   const [stats, related, wishlistIds] = await Promise.all([
     getReviewStats(product.id),
@@ -81,7 +89,9 @@ export default async function ProductPage({
     description: product.description,
     sku: product.sku,
     brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
-    image: product.images.map((image) => image.url),
+    image: product.images.map((image) =>
+      image.url.startsWith("http") ? image.url : `${appUrl}${image.url}`
+    ),
     category: product.category.name,
     offers: {
       "@type": "Offer",
@@ -91,6 +101,7 @@ export default async function ProductPage({
         product.stock > 0
           ? "https://schema.org/InStock"
           : "https://schema.org/OutOfStock",
+      url: `${appUrl}/product/${product.slug}`,
     },
     ...(product.ratingCount > 0
       ? {
@@ -210,34 +221,31 @@ export default async function ProductPage({
         </div>
       </div>
 
-      <div className="mt-16">
-        <ReviewSection
-          stats={stats}
-          reviews={product.reviews.map((review) => ({
-            id: review.id,
-            rating: review.rating,
-            comment: review.comment,
-            verifiedPurchase: review.verifiedPurchase,
-            createdAt: review.createdAt,
-            user: review.user,
-          }))}
-        />
-      </div>
+      <ProductTabs
+        productId={product.id}
+        productName={product.name}
+        description={product.description}
+        brand={product.brand}
+        sku={product.sku}
+        categoryName={product.category.name}
+        categorySlug={product.category.slug}
+        stats={stats}
+        initialReviews={product.reviews.map((review) => ({
+          id: review.id,
+          rating: review.rating,
+          comment: review.comment,
+          verifiedPurchase: review.verifiedPurchase,
+          createdAt: review.createdAt,
+          user: review.user,
+        }))}
+        isAuthenticated={session !== null}
+      />
 
-      {related.length > 0 && (
-        <section className="mt-16" aria-label="Related products">
-          <div className="mb-5 flex items-end justify-between gap-4">
-            <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">You may also like</h2>
-            <Link
-              href="/shop"
-              className="text-sm text-muted-foreground transition-colors hover:text-primary"
-            >
-              View all →
-            </Link>
-          </div>
-          <ProductGrid products={related} />
-        </section>
-      )}
+      <RelatedProducts
+        products={related}
+        categoryName={product.category.name}
+        categorySlug={product.category.slug}
+      />
     </div>
   );
 }

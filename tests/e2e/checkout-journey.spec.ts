@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -7,6 +8,15 @@ import { expect, test } from "@playwright/test";
  */
 
 const CUSTOMER = { email: "customer@nexora.demo", password: "NexoraDemo!2026" };
+
+test.afterAll(async () => {
+  // Clean up any test orders created by the mock checkout run to preserve seed verification invariants
+  try {
+    execSync("npx tsx scripts/clean-test-orders.ts", { stdio: "inherit" });
+  } catch (err) {
+    console.error("Failed to run clean-test-orders script:", err);
+  }
+});
 
 test("customer checkout journey ends with a PAID order", async ({ page }) => {
   await page.goto("/login");

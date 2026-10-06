@@ -8,13 +8,18 @@ import { selectCartCount, useCartStore } from "@/lib/cart/store";
 export function CartButton() {
   const items = useCartStore((state) => state.items);
   const hydrated = useCartStore((state) => state._hasHydrated);
+  const openDrawer = useCartStore((state) => state.openDrawer);
   const count = hydrated ? selectCartCount(items) : 0;
 
   return (
     <Link
       href="/cart"
+      onClick={(e) => {
+        e.preventDefault();
+        openDrawer();
+      }}
       aria-label={count > 0 ? `Cart, ${count} items` : "Cart"}
-      className="relative inline-flex size-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      className="relative inline-flex size-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer"
     >
       <ShoppingBag className="size-5" aria-hidden="true" />
       {count > 0 && (

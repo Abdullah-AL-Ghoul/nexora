@@ -12,8 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, formatPrice } from "@/lib/format";
+import { AdminPagination } from "@/components/admin/admin-pagination";
+import { ExportOrdersButton } from "@/components/admin/export-orders-button";
+import type { OrderStatus } from "@/lib/generated/prisma/client";
 
 export const metadata = { title: "Orders" };
+
+const PAGE_SIZE = 20;
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   DELIVERED: "secondary",
@@ -25,20 +30,43 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
   REFUNDED: "destructive",
 };
 
-export default async function AdminOrdersPage() {
+export default async function AdminOrdersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ page?: string; status?: string }>;
+}) {
   await requireRole(STAFF_ROLES);
+  const resolvedParams = searchParams ? await searchParams : {};
+  const { page, status } = resolvedParams;
 
-  const orders = await prisma.order.findMany({
-    orderBy: { placedAt: "desc" },
-    take: 25,
-    include: { user: { select: { name: true, email: true } }, _count: { select: { items: true } } },
-  });
+  const currentPage = Math.max(1, parseInt(page ?? "1", 10) || 1);
+  const skip = (currentPage - 1) * PAGE_SIZE;
+
+  const validStatus = status && status in statusVariant ? (status as OrderStatus) : undefined;
+  const where = validStatus ? { status: validStatus } : {};
+
+  const [orders, totalCount] = await Promise.all([
+    prisma.order.findMany({
+      where,
+      orderBy: { placedAt: "desc" },
+      skip,
+      take: PAGE_SIZE,
+      include: { user: { select: { name: true, email: true } }, _count: { select: { items: true } } },
+    }),
+    prisma.order.count({ where }),
+  ]);
+  const pageCount = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Orders</h1>
-        <p className="text-sm text-muted-foreground">Latest 25 orders — staff (Manager + Admin) section</p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Orders</h1>
+          <p className="text-sm text-muted-foreground">
+            {totalCount} order{totalCount === 1 ? "" : "s"} — staff (Manager + Admin) section
+          </p>
+        </div>
+        <ExportOrdersButton status={validStatus} />
       </div>
 
       <div className="rounded-lg border border-border">
@@ -54,6 +82,13 @@ export default async function AdminOrdersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {orders.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  No orders found.
+                </TableCell>
+              </TableRow>
+            )}
             {orders.map((order) => (
               <TableRow key={order.id}>
                 <TableCell className="px-4 py-3 font-medium text-foreground">
@@ -80,6 +115,15 @@ export default async function AdminOrdersPage() {
           </TableBody>
         </Table>
       </div>
+
+      <AdminPagination
+        currentPage={currentPage}
+        pageCount={pageCount}
+        totalItems={totalCount}
+        pageSize={PAGE_SIZE}
+        basePath="/admin/orders"
+        searchParams={{ status: validStatus }}
+      />
     </div>
   );
 }

@@ -17,7 +17,7 @@ import { prisma } from "../lib/db";
 
 const DEMO_PASSWORD = "NexoraDemo!2026";
 
-const IMG = (slug: string, i: number) => `https://picsum.photos/seed/nexora-${slug}-${i}/800/800`;
+const IMG = (slug: string, i: number) => `/images/products/${slug}-${i}.webp`;
 
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);

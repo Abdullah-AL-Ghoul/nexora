@@ -14,8 +14,12 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AdminPagination } from "@/components/admin/admin-pagination";
+import type { Prisma, ProductStatus } from "@/lib/generated/prisma/client";
 
 export const metadata = { title: "Products" };
+
+const PAGE_SIZE = 20;
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   ACTIVE: "default",
@@ -26,39 +30,48 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
 export default async function AdminProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
 }) {
   await requireRole(STAFF_ROLES);
-  const { q, status } = await searchParams;
+  const { q, status, page } = await searchParams;
 
   const query = (q ?? "").trim();
-  const statusFilter =
+  const statusFilter: ProductStatus | undefined =
     status === "DRAFT" || status === "ACTIVE" || status === "ARCHIVED" ? status : undefined;
+  const currentPage = Math.max(1, parseInt(page ?? "1", 10) || 1);
+  const skip = (currentPage - 1) * PAGE_SIZE;
 
-  const products = await prisma.product.findMany({
-    where: {
-      ...(query
-        ? {
-            OR: [
-              { name: { contains: query, mode: "insensitive" } },
-              { sku: { contains: query, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      price: true,
-      stock: true,
-      status: true,
-      category: { select: { name: true } },
-    },
-  });
+  const where: Prisma.ProductWhereInput = {
+    ...(query
+      ? {
+          OR: [
+            { name: { contains: query, mode: "insensitive" } },
+            { sku: { contains: query, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+  };
+
+  const [products, totalCount] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: PAGE_SIZE,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        price: true,
+        stock: true,
+        status: true,
+        category: { select: { name: true } },
+      },
+    }),
+    prisma.product.count({ where }),
+  ]);
+  const pageCount = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -66,7 +79,7 @@ export default async function AdminProductsPage({
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Products</h1>
           <p className="text-sm text-muted-foreground">
-            {products.length} product{products.length === 1 ? "" : "s"}
+            {totalCount} product{totalCount === 1 ? "" : "s"}
             {query ? ` matching “${query}”` : ""}
           </p>
         </div>
@@ -154,6 +167,15 @@ export default async function AdminProductsPage({
           </TableBody>
         </Table>
       </div>
+
+      <AdminPagination
+        currentPage={currentPage}
+        pageCount={pageCount}
+        totalItems={totalCount}
+        pageSize={PAGE_SIZE}
+        basePath="/admin/products"
+        searchParams={{ q: query || undefined, status: statusFilter }}
+      />
     </div>
   );
 }

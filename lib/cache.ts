@@ -11,6 +11,7 @@ import { unstable_cache } from "next/cache";
  * stay per-request.
  */
 export const CATALOG_TAG = "catalog";
+export const ADMIN_DASHBOARD_TAG = "admin-dashboard";
 
 export function cachedCatalog<T>(
   keyParts: string[],
@@ -20,5 +21,10 @@ export function cachedCatalog<T>(
   return unstable_cache(query, ["nexora-catalog", ...keyParts], {
     tags: [CATALOG_TAG],
     revalidate: revalidateSeconds,
-  })();
+  })().catch((err: unknown) => {
+    if (err instanceof Error && err.message.includes("incrementalCache missing")) {
+      return query();
+    }
+    throw err;
+  });
 }

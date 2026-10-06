@@ -1,10 +1,14 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
+import { ADMIN_DASHBOARD_TAG } from "@/lib/cache";
+
+export { ADMIN_DASHBOARD_TAG };
 
 /** Live dashboard aggregates (real DB numbers — no demo labels). */
 
 const PAID_STATUSES = ["PAID", "PROCESSING", "SHIPPED", "DELIVERED"] as const;
 
-export async function getDashboardStats() {
+export async function getDashboardStatsUncached() {
   const [revenue, orderCount, customerCount, ordersByStatus, lowStock, recentOrders, topRaw] =
     await Promise.all([
       prisma.order.aggregate({
@@ -35,7 +39,10 @@ export async function getDashboardStats() {
       prisma.orderItem.groupBy({
         by: ["productId"],
         _sum: { lineTotal: true, quantity: true },
-        where: { productId: { not: null } },
+        where: {
+          productId: { not: null },
+          order: { status: { in: [...PAID_STATUSES] } },
+        },
         orderBy: { _sum: { lineTotal: "desc" } },
         take: 5,
       }),
@@ -55,7 +62,10 @@ export async function getDashboardStats() {
     orderCount,
     customerCount,
     lowStock,
-    recentOrders,
+    recentOrders: recentOrders.map((order) => ({
+      ...order,
+      placedAt: order.placedAt.toISOString(),
+    })),
     ordersByStatus: ordersByStatus.map((row) => ({
       status: row.status,
       count: row._count._all,
@@ -70,3 +80,20 @@ export async function getDashboardStats() {
       })),
   };
 }
+
+export function getDashboardStats() {
+  return unstable_cache(
+    () => getDashboardStatsUncached(),
+    ["admin-dashboard-stats"],
+    {
+      tags: [ADMIN_DASHBOARD_TAG],
+      revalidate: 60,
+    }
+  )().catch((err: unknown) => {
+    if (err instanceof Error && err.message.includes("incrementalCache missing")) {
+      return getDashboardStatsUncached();
+    }
+    throw err;
+  });
+}
+

@@ -34,7 +34,8 @@ function CategoryCardTile({ category }: { category: CategoryCard }) {
   return (
     <Link
       href={`/category/${category.slug}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40"
+      prefetch={true}
+      className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_20px_-5px_rgba(201,169,97,0.16)]"
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-muted">
         {category.imageUrl && (

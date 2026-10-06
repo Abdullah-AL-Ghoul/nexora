@@ -49,9 +49,9 @@ export default async function WishlistPage() {
                   <Image
                     src={product.images[0].url}
                     alt={product.name}
-                    width={80}
-                    height={80}
-                    className="size-20 object-cover"
+                    fill
+                    sizes="80px"
+                    className="object-cover"
                   />
                 )}
               </Link>
