@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
 import { fetchProductBySlug, fetchRelatedProducts, ApiProduct } from '../lib/api';
+import { setMeta } from '../lib/seo';
 import { Product, ProductVariant } from '../types';
 import { ProductCard } from '../components/store/ProductCard';
 import {
@@ -56,6 +57,33 @@ export const ProductDetailPage: React.FC = () => {
       .then((data: ApiProduct) => {
         if (requestIdRef.current !== requestId) return;
         setProduct(data as Product);
+        // Per-product SEO: rich title + structured data (Product schema)
+        setMeta({
+          title: `${data.name} | NEXORA`,
+          description: data.tagline || data.description?.slice(0, 160),
+          canonical: `${window.location.origin}/product/${data.slug}`,
+          jsonLd: [{
+            key: 'product',
+            data: {
+              '@context': 'https://schema.org',
+              '@type': 'Product',
+              name: data.name,
+              description: data.tagline || data.description,
+              image: data.images?.map((i) => i.url) ?? [],
+              sku: data.sku,
+              brand: { '@type': 'Brand', name: 'NEXORA' },
+              offers: {
+                '@type': 'Offer',
+                price: data.price,
+                priceCurrency: 'USD',
+                availability: data.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+              },
+              aggregateRating: data.reviewsCount > 0
+                ? { '@type': 'AggregateRating', ratingValue: data.rating, reviewCount: data.reviewsCount }
+                : undefined,
+            },
+          }],
+        });
         return fetchRelatedProducts(data.slug).then((related: ApiProduct[]) => {
           if (requestIdRef.current !== requestId) return;
           setRelatedProducts(related as Product[]);

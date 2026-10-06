@@ -76,7 +76,7 @@
     text-rendering: optimizeLegibility;
   }
   [dir="rtl"] body {
-    font-family: "Cairo", "Tajawal", "Plus Jakarta Sans", system-ui, sans-serif;
+    font-family: "Cairo", "Plus Jakarta Sans", system-ui, sans-serif;
   }
   h1, h2, h3, .font-display {
     font-family: var(--font-display);

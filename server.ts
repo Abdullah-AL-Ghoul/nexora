@@ -84,6 +84,39 @@ app.post('/api/checkout/create-intent', (req: Request, res: Response) => {
   res.json({ clientSecret, paymentIntentId: `pi_test_${Date.now().toString(36)}`, amount, currency, mode: 'test', customerEmail });
 });
 
+// ─── SEO: robots.txt + sitemap.xml (generated from the live catalog) ──────────
+
+app.get('/robots.txt', async (_req: Request, res: Response) => {
+  res.type('text/plain').send(
+    'User-agent: *\n' +
+    'Allow: /\n' +
+    'Disallow: /admin\n' +
+    'Disallow: /checkout\n' +
+    'Disallow: /login\n' +
+    'Disallow: /order-success/\n' +
+    `Sitemap: ${process.env.APP_URL ?? `http://localhost:${PORT}`}/sitemap.xml\n`
+  );
+});
+
+app.get('/sitemap.xml', async (_req: Request, res: Response) => {
+  try {
+    const { all } = await import('./server/db.js');
+    const base = process.env.APP_URL ?? `http://localhost:${PORT}`;
+    const urls = ['/', '/shop', '/categories', '/about'];
+    const rows = all<{ slug: string }>('SELECT slug FROM products WHERE status = ?', ['ACTIVE']);
+    const urlset = urls
+      .concat(rows.map((r) => `/product/${r.slug}`))
+      .map((p) => `  <url><loc>${base}${p}</loc></url>`)
+      .join('\n');
+    res.type('application/xml').send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlset}\n</urlset>`
+    );
+  } catch (err) {
+    console.error('sitemap error:', err);
+    res.status(500).send('Unable to generate sitemap');
+  }
+});
+
 // ─── New API Routes ──────────────────────────────────────────────────────────
 
 async function registerRoutes() {

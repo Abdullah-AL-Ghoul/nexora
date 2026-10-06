@@ -1,15 +1,16 @@
-import { Auth, getAuth } from 'firebase/auth';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // NEXORA API client — single source of truth for server communication.
 // Every request attaches the current Firebase ID token via Authorization header.
+// Firebase Auth is imported lazily (dynamic import) so the ~180KB SDK is not
+// part of the initial route chunk — it only loads when a real user signs in.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function getToken(): Promise<string> {
   // Demo/local bypass: if no Firebase user is signed in, fall back to 'demo'
   // only when explicitly allowed (guards are still enforced server-side).
   try {
-    const auth: Auth = getAuth();
+    const { getAuth } = await import('firebase/auth');
+    const auth = getAuth();
     if (auth.currentUser) {
       const t = await auth.currentUser.getIdToken();
       if (t) return t;

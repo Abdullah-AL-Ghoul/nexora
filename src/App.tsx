@@ -10,6 +10,7 @@ import { QuickViewModal } from './components/store/QuickViewModal';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { MarketIntelligenceModal } from './components/store/MarketIntelligenceModal';
 import { fetchCurrentUser } from './lib/api';
+import { setMeta } from './lib/seo';
 
 // Code-split pages (performance: initial bundle only carries the active route)
 const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
@@ -90,6 +91,49 @@ function RouteParamsSync() {
   return null;
 }
 
+/** Sets per-route document metadata (title, description, canonical) from URL. */
+function SeoManager() {
+  const location = useLocation();
+  const { language } = useStore();
+
+  useEffect(() => {
+    const clean = location.pathname.replace(/^\/+|\/+$/g, '');
+    const [seg] = clean.split('/');
+    const metaByRoute: Record<string, { title: string; description: string } | undefined> = {
+      '': {
+        title: 'NEXORA — Luxury Atelier & Artisanal Objects',
+        description: 'Curated masterworks: Swiss horology, acoustic engineering, full-grain leather, and architectural workspace essentials.',
+      },
+      shop: {
+        title: 'Shop — Curated Luxury Artifacts | NEXORA',
+        description: 'Browse the full NEXORA collection across eight artisanal ateliers.',
+      },
+      categories: {
+        title: 'Ateliers & Craft Disciplines | NEXORA',
+        description: 'Explore our eight independent workshops dedicated to permanent, tactile masterworks.',
+      },
+      about: {
+        title: 'Philosophy & Heritage | NEXORA',
+        description: 'The NEXORA constitution: built to outlast fleeting trends.',
+      },
+      checkout: { title: 'Checkout | NEXORA', description: 'Secure luxury checkout with insured white-glove shipping.' },
+      orders: { title: 'Order History | NEXORA', description: 'Track your NEXORA orders and shipments.' },
+      wishlist: { title: 'Wishlist | NEXORA', description: 'Your saved NEXORA collectibles.' },
+      admin: { title: 'Management Console | NEXORA', description: 'NEXORA operations console.' },
+      login: { title: 'Sign In | NEXORA', description: 'Access your NEXORA atelier account.' },
+      'order-success': { title: 'Order Confirmed | NEXORA', description: 'Your NEXORA order has been confirmed.' },
+    };
+    const m = metaByRoute[seg] ?? metaByRoute[clean] ?? metaByRoute[''] ?? {
+      title: 'NEXORA — Luxury Atelier & Artisanal Objects',
+      description: 'Curated masterworks: Swiss horology, acoustic engineering, full-grain leather, and architectural workspace essentials.',
+    };
+    const canonical = `${window.location.origin}${location.pathname}`;
+    setMeta({ title: m.title, description: m.description, canonical });
+  }, [location.pathname, language]);
+
+  return null;
+}
+
 function AppShell() {
   const { language, switchRole } = useStore();
   const [isCartOpen, setIsCartOpen] = React.useState(false);
@@ -148,6 +192,7 @@ function AppShell() {
       </main>
 
       <RouteParamsSync />
+      <SeoManager />
 
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
       <QuickViewModal />
