@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, lazy, Suspense, Component, type ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import React, { useEffect, lazy, Suspense, Component, type ReactNode } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { setRouterNavigate } from './lib/routerBridge';
@@ -9,7 +9,7 @@ import { CartDrawer } from './components/store/CartDrawer';
 import { QuickViewModal } from './components/store/QuickViewModal';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { MarketIntelligenceModal } from './components/store/MarketIntelligenceModal';
-import { fetchCurrentUser } from './lib/api';
+import { fetchCurrentUser, getStoredToken, setStoredToken } from './lib/api';
 import { setMeta } from './lib/seo';
 
 // Code-split pages (performance: initial bundle only carries the active route)
@@ -134,8 +134,30 @@ function SeoManager() {
   return null;
 }
 
+/** Redirects non-privileged visitors away from guarded routes (server is the
+ *  real enforcement; this is the UX guard). */
+function RequireRole({
+  role,
+  children,
+}: {
+  role: 'ADMIN' | 'MANAGER' | 'CUSTOMER';
+  children: ReactNode;
+}) {
+  const { currentUser } = useStore();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  if (!currentUser) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+  if (currentUser.role !== role) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 function AppShell() {
-  const { language, switchRole } = useStore();
+  const { language, theme, setCurrentUser } = useStore();
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const [isMarketIntelligenceOpen, setIsMarketIntelligenceOpen] = React.useState(false);
   const navigate = useNavigate();
@@ -146,13 +168,32 @@ function AppShell() {
     setRouterNavigate((to) => navigate(to));
   }, [navigate]);
 
-  // Resolve server-determined role → local store user (no email guessing)
+  // Resolve the session only when a real session token exists. Guests never send a
+  // token, so first-time visitors arrive logged-out (no silent auto-login).
   useEffect(() => {
+    if (!getStoredToken()) {
+      setCurrentUser(null);
+      return;
+    }
     fetchCurrentUser()
       .then((u) => {
-        switchRole(u.role as 'CUSTOMER' | 'MANAGER' | 'ADMIN');
+        setCurrentUser({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role as 'CUSTOMER' | 'MANAGER' | 'ADMIN',
+          phone: (u as any).phone ?? undefined,
+          avatar: (u as any).avatar ?? undefined,
+          createdAt: (u as any).created_at ?? new Date().toISOString(),
+        });
       })
-      .catch(() => { /* guest browsing is fine */ });
+      .catch((err: any) => {
+        // Token is present but rejected → expired/invalid → drop it (stay guest).
+        if (err?.message?.includes('401') || String(err?.message).includes('401')) {
+          setStoredToken(null);
+          setCurrentUser(null);
+        }
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -161,6 +202,14 @@ function AppShell() {
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = language;
   }, [language]);
+
+  // Apply the persisted theme + keep the browser UI tint in sync
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'light' ? '#faf8f4' : '#0f1113');
+  }, [theme]);
 
   return (
     <div className="min-h-screen flex flex-col bg-ink text-fg">
@@ -184,9 +233,13 @@ function AppShell() {
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/wishlist" element={<WishlistPage />} />
             <Route path="/about" element={<AboutPage />} />
-            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin" element={
+              <RequireRole role="ADMIN">
+                <AdminDashboardPage />
+              </RequireRole>
+            } />
             <Route path="/login" element={<LoginPage />} />
-            <Route path="*" element={<HomePage />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </main>
@@ -200,6 +253,31 @@ function AppShell() {
       <ToastContainer />
       <Footer />
     </div>
+  );
+}
+
+/** 404 — unknown routes land here instead of silently rendering Home. */
+function NotFound() {
+  const { navigate } = useStore();
+  const { language } = useStore();
+  return (
+    <section className="flex min-h-[70vh] flex-col items-center justify-center gap-6 px-6 text-center">
+      <p className="font-mono text-sm tracking-[0.3em] text-gold">404</p>
+      <h1 className="font-serif-luxury text-3xl sm:text-4xl font-semibold">
+        {language === 'ar' ? 'المسار غير موجود' : 'This path does not exist'}
+      </h1>
+      <p className="max-w-md text-sm text-fg-muted leading-relaxed">
+        {language === 'ar'
+          ? 'يبدو أن الصفحة التي تبحث عنها غير متوفرة ضمن أتلييه نكسورا.'
+          : 'The page you are looking for is not part of the NEXORA atelier.'}
+      </p>
+      <button
+        onClick={() => navigate('home')}
+        className="rounded-md bg-gold px-6 py-2.5 text-sm font-semibold text-ink hover:bg-gold-soft transition-colors cursor-pointer"
+      >
+        {language === 'ar' ? 'العودة إلى الرئيسية' : 'Return Home'}
+      </button>
+    </section>
   );
 }
 

@@ -4,30 +4,85 @@
    NEXORA Design Tokens — single source of truth (see DESIGN.md).
    Registered with Tailwind v4 so utilities like `bg-ink`, `text-gold`,
    `border-line`, `bg-surface`, `shad-card` work everywhere.
+   Values are runtime CSS variables so the theme can flip dark ⇄ light.
    ───────────────────────────────────────────────────────────────────────── */
-@theme {
+:root {
+  /* Dark (default) */
+  --nx-ink: #0f1113;
+  --nx-surface: #171a1f;
+  --nx-elevated: #1e2229;
+  --nx-raised: #121418;
+  --nx-line: #242831;
+  --nx-line-strong: #343a47;
+  --nx-fg: #f5f5f5;
+  --nx-fg-muted: #9ca3af;
+  --nx-fg-faint: #6b7280;
+  --nx-gold: #c9a961;
+  --nx-gold-soft: #e7d3a0;
+  --nx-success: #34d399;
+  --nx-warning: #fbbf24;
+  --nx-danger: #fb7185;
+  --nx-info: #7dd3fc;
+
+  /* Elevation (dark-tuned) */
+  --nx-shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --nx-shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 4px 12px rgb(0 0 0 / 0.5);
+  --nx-shadow-gold: 0 0 0 1px rgb(201 169 97 / 0.25), 0 8px 30px -12px rgb(201 169 97 / 0.35);
+
+  /* On-image text — sits on photo + dark scrim in BOTH themes, so it never flips */
+  --nx-on-image: #f5f5f5;
+  --nx-on-image-muted: rgb(245 245 245 / 0.72);
+}
+
+[data-theme="light"] {
+  /* Light — warm ivory luxury, gold deepened for contrast */
+  --nx-ink: #faf8f4;
+  --nx-surface: #ffffff;
+  --nx-elevated: #f4efe6;
+  --nx-raised: #f7f3eb;
+  --nx-line: #e6dfd1;
+  --nx-line-strong: #cfc2aa;
+  --nx-fg: #191512;
+  --nx-fg-muted: #5c554a;
+  --nx-fg-faint: #8a8175;
+  --nx-gold: #8a6d2f;
+  --nx-gold-soft: #a9874a;
+  --nx-success: #047857;
+  --nx-warning: #b45309;
+  --nx-danger: #dc2626;
+  --nx-info: #0369a1;
+
+  /* Elevation — softer, warmer for the ivory theme */
+  --nx-shadow-card: 0 1px 2px rgb(25 21 18 / 0.06), 0 10px 28px -14px rgb(25 21 18 / 0.28);
+  --nx-shadow-overlay: 0 24px 60px -22px rgb(25 21 18 / 0.28), 0 4px 12px rgb(25 21 18 / 0.12);
+  --nx-shadow-gold: 0 0 0 1px rgb(138 109 47 / 0.3), 0 8px 30px -14px rgb(138 109 47 / 0.4);
+}
+
+@theme inline {
   /* Surfaces */
-  --color-ink: #0f1113;
-  --color-surface: #171a1f;
-  --color-elevated: #1e2229;
-  --color-raised: #121418;
-  --color-line: #242831;
-  --color-line-strong: #343a47;
+  --color-ink: var(--nx-ink);
+  --color-surface: var(--nx-surface);
+  --color-elevated: var(--nx-elevated);
+  --color-raised: var(--nx-raised);
+  --color-line: var(--nx-line);
+  --color-line-strong: var(--nx-line-strong);
 
   /* Brand */
-  --color-gold: #c9a961;
-  --color-gold-soft: #e7d3a0;
+  --color-gold: var(--nx-gold);
+  --color-gold-soft: var(--nx-gold-soft);
 
   /* Text */
-  --color-fg: #f5f5f5;
-  --color-fg-muted: #9ca3af;
-  --color-fg-faint: #6b7280;
+  --color-fg: var(--nx-fg);
+  --color-fg-muted: var(--nx-fg-muted);
+  --color-fg-faint: var(--nx-fg-faint);
+  --color-on-image: var(--nx-on-image);
+  --color-on-image-muted: var(--nx-on-image-muted);
 
   /* Status */
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-danger: #fb7185;
-  --color-info: #7dd3fc;
+  --color-success: var(--nx-success);
+  --color-warning: var(--nx-warning);
+  --color-danger: var(--nx-danger);
+  --color-info: var(--nx-info);
 
   /* Typography */
   --font-display: "Cinzel", "Cairo", Georgia, serif;
@@ -43,9 +98,9 @@
   --radius-2xl: 1.25rem;
 
   /* Elevation */
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 4px 12px rgb(0 0 0 / 0.5);
-  --shadow-gold: 0 0 0 1px rgb(201 169 97 / 0.25), 0 8px 30px -12px rgb(201 169 97 / 0.35);
+  --shadow-card: var(--nx-shadow-card);
+  --shadow-overlay: var(--nx-shadow-overlay);
+  --shadow-gold: var(--nx-shadow-gold);
 
   /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -92,8 +147,8 @@
     letter-spacing: 0;
   }
   ::selection {
-    background: rgb(201 169 97 / 0.3);
-    color: var(--color-gold-soft);
+    background: color-mix(in srgb, var(--nx-gold) 30%, transparent);
+    color: var(--nx-fg);
   }
   /* Visible, consistent focus ring */
   :focus-visible {
@@ -142,6 +197,26 @@
   100% { background-position: 468px 0; }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Scroll-reveal + marquee (used by home/storefront; honours prefers-reduced-motion)
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes marquee-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+[dir="rtl"] .animate-marquee { animation-direction: reverse; }
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* Respect reduced-motion globally */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -149,5 +224,9 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
 }

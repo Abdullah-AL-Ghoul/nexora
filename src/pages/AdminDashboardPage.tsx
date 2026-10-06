@@ -10,7 +10,9 @@ import {
   fetchCategories,
   fetchOrders,
   fetchInventoryTransactions,
+  fetchUsers,
   saveProduct,
+  updateProduct,
   deleteProduct,
   saveCategory,
   deleteCategory,
@@ -19,7 +21,6 @@ import {
   adjustStock,
   errorMessage,
 } from '../lib/api';
-import { DEMO_USERS } from '../store/useStore';
 import {
   LayoutDashboard,
   Package,
@@ -120,7 +121,7 @@ function mapInventoryTx(r: any): InventoryData {
 }
 
 export const AdminDashboardPage: React.FC = () => {
-  const { currentUser, switchRole, addToast, navigate } = useStore();
+  const { currentUser, addToast, navigate } = useStore();
   const { t, language } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<
@@ -135,6 +136,7 @@ export const AdminDashboardPage: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [rawOrders, setRawOrders] = useState<OrderData[]>([]);
   const [inventoryTx, setInventoryTx] = useState<InventoryData[]>([]);
+  const [userList, setUserList] = useState<any[]>([]);
 
   // Search & Filter within dashboard
   const [productSearch, setProductSearch] = useState('');
@@ -145,18 +147,20 @@ export const AdminDashboardPage: React.FC = () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [ana, prods, cats, ordrs, tx] = await Promise.all([
+      const [ana, prods, cats, ordrs, tx, usrs] = await Promise.all([
         fetchAnalytics(),
         fetchAllProducts(),
         fetchCategories(),
         fetchOrders(),
         fetchInventoryTransactions(),
+        fetchUsers().catch(() => []),
       ]);
       setAnalyticsData(ana);
       setRawProducts(prods);
       setCategories(cats.map(mapCategory));
       setRawOrders(ordrs.map(mapOrder));
       setInventoryTx(tx.map(mapInventoryTx));
+      setUserList(usrs);
     } catch (err) {
       setLoadError(errorMessage(err, 'Failed to load dashboard data.'));
     } finally {
@@ -168,18 +172,20 @@ export const AdminDashboardPage: React.FC = () => {
   // via the error banner instead of breaking the mutation flow).
   const refresh = useCallback(async () => {
     try {
-      const [ana, prods, cats, ordrs, tx] = await Promise.all([
+      const [ana, prods, cats, ordrs, tx, usrs] = await Promise.all([
         fetchAnalytics(),
         fetchAllProducts(),
         fetchCategories(),
         fetchOrders(),
         fetchInventoryTransactions(),
+        fetchUsers().catch(() => []),
       ]);
       setAnalyticsData(ana);
       setRawProducts(prods);
       setCategories(cats.map(mapCategory));
       setRawOrders(ordrs.map(mapOrder));
       setInventoryTx(tx.map(mapInventoryTx));
+      setUserList(usrs);
       setLoadError('');
     } catch (err) {
       setLoadError(errorMessage(err, 'Failed to refresh dashboard data.'));
@@ -187,12 +193,12 @@ export const AdminDashboardPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentUser.role !== 'ADMIN') {
+    if (!currentUser || currentUser.role !== 'ADMIN') {
       setLoading(false);
       return;
     }
     void loadAll();
-  }, [currentUser.role, loadAll]);
+  }, [currentUser, loadAll]);
 
   // Modal states for Product Add/Edit
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -208,7 +214,7 @@ export const AdminDashboardPage: React.FC = () => {
     stock: 15,
     categoryId: 'cat_timepieces',
     materials: 'Stainless Steel, Sapphire Glass',
-    imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80',
+    imageUrl: '/img/nx-1522335789203-aabd1fc54bc9.jpg',
   });
 
   // Modal states for Category Add/Edit
@@ -228,10 +234,10 @@ export const AdminDashboardPage: React.FC = () => {
   const [stockReason, setStockReason] = useState('Artisanal workshop replenishment');
 
   // Authorization Gate (Only authenticated Admin can access)
-  if (currentUser.role !== 'ADMIN') {
+  if (!currentUser || currentUser.role !== 'ADMIN') {
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center space-y-6">
-        <div className="w-16 h-16 rounded-full bg-rose-950/40 border border-danger/40 flex items-center justify-center mx-auto text-danger">
+        <div className="w-16 h-16 rounded-full bg-danger/10 border border-danger/40 flex items-center justify-center mx-auto text-danger">
           <Shield className="w-8 h-8" />
         </div>
         <div className="space-y-2">
@@ -265,7 +271,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const isSuperAdmin = currentUser.role === 'ADMIN';
   const analytics = analyticsData ?? EMPTY_ANALYTICS;
-  const users = Object.values(DEMO_USERS);
+  const users = userList;
 
   // Filter products by search
   const filteredProducts = rawProducts.filter(
@@ -297,7 +303,7 @@ export const AdminDashboardPage: React.FC = () => {
       stock: 15,
       categoryId: categories[0]?.id || 'cat_timepieces',
       materials: 'Cold-Rolled 316L, Sapphire Glass',
-      imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80',
+      imageUrl: '/img/nx-1522335789203-aabd1fc54bc9.jpg',
     });
     setIsProductModalOpen(true);
   };
@@ -316,7 +322,7 @@ export const AdminDashboardPage: React.FC = () => {
           ? prod.images[0].url
           : typeof (prod as any).imageUrl === 'string'
           ? (prod as any).imageUrl
-          : 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80';
+          : '/img/nx-1522335789203-aabd1fc54bc9.jpg';
 
       setProductForm({
         name: prod.name || '',
@@ -347,8 +353,7 @@ export const AdminDashboardPage: React.FC = () => {
         ? productForm.materials.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      await saveProduct({
-        id: editingProduct?.id,
+      const payload = {
         name: productForm.name.trim(),
         slug: productForm.slug?.trim() || productForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         tagline: productForm.tagline.trim(),
@@ -362,13 +367,19 @@ export const AdminDashboardPage: React.FC = () => {
         images: [
           {
             id: editingProduct?.images?.[0]?.id || `img_${Date.now()}`,
-            url: productForm.imageUrl || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80',
+            url: productForm.imageUrl || '/img/default.jpg',
             altText: productForm.name,
             isPrimary: true,
             order: 0,
           },
         ],
-      });
+      };
+
+      if (editingProduct) {
+        await updateProduct(editingProduct.id, payload);
+      } else {
+        await saveProduct(payload);
+      }
 
       setIsProductModalOpen(false);
       await refresh();
@@ -455,7 +466,7 @@ export const AdminDashboardPage: React.FC = () => {
       name: '',
       slug: '',
       description: '',
-      imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=800&q=80',
+      imageUrl: '/img/nx-1522335789203-aabd1fc54bc9.jpg',
     });
     setIsCategoryModalOpen(true);
   };
@@ -578,19 +589,19 @@ export const AdminDashboardPage: React.FC = () => {
 
       {/* Initial load error banner with retry */}
       {loadError && (
-        <div className="rounded-xl border border-danger/40 bg-rose-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="rounded-xl border border-danger/40 bg-danger/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-danger shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-rose-300">
+              <p className="text-sm font-semibold text-danger">
                 {language === 'ar' ? 'تعذر تحميل بيانات لوحة التحكم' : 'Failed to load dashboard data'}
               </p>
-              <p className="text-xs text-rose-200/80 mt-1">{loadError}</p>
+              <p className="text-xs text-danger/80 mt-1">{loadError}</p>
             </div>
           </div>
           <button
             onClick={() => loadAll()}
-            className="shrink-0 px-4 py-2 rounded bg-danger/20 border border-danger/40 text-rose-200 text-xs font-semibold uppercase tracking-wider hover:bg-danger/30 transition-colors cursor-pointer"
+            className="shrink-0 px-4 py-2 rounded bg-danger/20 border border-danger/40 text-danger text-xs font-semibold uppercase tracking-wider hover:bg-danger/30 transition-colors cursor-pointer"
           >
             {language === 'ar' ? 'إعادة المحاولة' : 'Retry'}
           </button>
@@ -872,7 +883,7 @@ export const AdminDashboardPage: React.FC = () => {
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={p.images?.[0]?.url || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=300&q=80'}
+                            src={p.images?.[0]?.url || '/img/nx-1522335789203-aabd1fc54bc9.jpg'}
                             alt={p.name}
                             className="w-10 h-10 rounded object-cover border border-line shrink-0"
                           />
@@ -890,7 +901,7 @@ export const AdminDashboardPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleQuickStockChange(p.id, -1)}
-                            className="w-7 h-7 rounded bg-raised hover:bg-line border border-line flex items-center justify-center text-fg-muted hover:text-white cursor-pointer"
+                            className="w-7 h-7 rounded bg-raised hover:bg-line border border-line flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer"
                             title="Decrease Stock"
                           >
                             -
@@ -905,7 +916,7 @@ export const AdminDashboardPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleQuickStockChange(p.id, 1)}
-                            className="w-7 h-7 rounded bg-raised hover:bg-line border border-line flex items-center justify-center text-fg-muted hover:text-white cursor-pointer"
+                            className="w-7 h-7 rounded bg-raised hover:bg-line border border-line flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer"
                             title="Increase Stock"
                           >
                             +
@@ -1243,7 +1254,7 @@ export const AdminDashboardPage: React.FC = () => {
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <img
-                          src={u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80'}
+                          src={u.avatar || '/img/nx-1535713875002-d1d0cf377fde.jpg'}
                           alt={u.name}
                           className="w-8 h-8 rounded-full object-cover border border-line"
                         />
@@ -1303,11 +1314,11 @@ export const AdminDashboardPage: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-start sm:items-center">
                   <div className="w-16 h-16 rounded-lg bg-surface border border-line overflow-hidden shrink-0">
                     <img
-                      src={productForm.imageUrl || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=300&q=80'}
+                      src={productForm.imageUrl || '/img/nx-1522335789203-aabd1fc54bc9.jpg'}
                       alt="Preview"
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=300&q=80';
+                        (e.target as HTMLImageElement).src = '/img/nx-1522335789203-aabd1fc54bc9.jpg';
                       }}
                     />
                   </div>
@@ -1316,35 +1327,35 @@ export const AdminDashboardPage: React.FC = () => {
                       type="url"
                       value={productForm.imageUrl}
                       onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
-                      placeholder="https://images.unsplash.com/photo-..."
+                      placeholder="/img/default.jpg or an image URL"
                       className="w-full bg-surface border border-line text-fg px-3.5 py-2 rounded outline-none focus:border-gold"
                     />
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       <span className="text-[10px] text-fg-muted mr-1">{language === 'ar' ? 'نماذج جاهزة:' : 'Presets:'}</span>
                       <button
                         type="button"
-                        onClick={() => setProductForm({ ...productForm, imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80' })}
+                        onClick={() => setProductForm({ ...productForm, imageUrl: '/img/nx-1522335789203-aabd1fc54bc9.jpg' })}
                         className="text-[10px] px-2 py-0.5 rounded bg-surface hover:bg-line text-gold border border-line cursor-pointer"
                       >
                         {language === 'ar' ? 'ساعات' : 'Watch'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setProductForm({ ...productForm, imageUrl: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=1000&q=80' })}
+                        onClick={() => setProductForm({ ...productForm, imageUrl: '/img/nx-1546435770-a3e426bf472b.jpg' })}
                         className="text-[10px] px-2 py-0.5 rounded bg-surface hover:bg-line text-gold border border-line cursor-pointer"
                       >
                         {language === 'ar' ? 'صوتيات' : 'Audio'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setProductForm({ ...productForm, imageUrl: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=80' })}
+                        onClick={() => setProductForm({ ...productForm, imageUrl: '/img/nx-1548036328-c9fa89d128fa.jpg' })}
                         className="text-[10px] px-2 py-0.5 rounded bg-surface hover:bg-line text-gold border border-line cursor-pointer"
                       >
                         {language === 'ar' ? 'جلديات' : 'Leather'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setProductForm({ ...productForm, imageUrl: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80' })}
+                        onClick={() => setProductForm({ ...productForm, imageUrl: '/img/nx-1527443224154-c4a3942d3acf.jpg' })}
                         className="text-[10px] px-2 py-0.5 rounded bg-surface hover:bg-line text-gold border border-line cursor-pointer"
                       >
                         {language === 'ar' ? 'مكتبية' : 'Workspace'}

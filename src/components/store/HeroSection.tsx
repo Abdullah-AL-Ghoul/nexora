@@ -29,7 +29,7 @@ const HERO_SLIDES: Slide[] = [
       en: 'Swiss automatic column-wheel chronographs with 70-hour power reserves. Encased in cold-rolled 316L aerospace steel with dual-curved anti-reflective sapphire crystals.',
     },
     imageUrl:
-      'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1800&q=85',
+      '/img/nx-1522335789203-aabd1fc54bc9.jpg',
     accentNote: { ar: 'إصدار محدود بـ 50 قطعة سنوياً', en: 'Limited to 50 Annual Commissions' },
     priceNote: { ar: 'يبدأ من $890', en: 'Starting at $890' },
   },
@@ -45,7 +45,7 @@ const HERO_SLIDES: Slide[] = [
       en: 'Zero-distortion planar magnetic monitors sculpted from oiled American black walnut and CNC-milled aluminum billets. Uncolored fidelity calibrated to the human ear.',
     },
     imageUrl:
-      'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=1800&q=85',
+      '/img/nx-1546435770-a3e426bf472b.jpg',
     accentNote: { ar: 'صنعت في كوبنهاغن', en: 'Machined In Copenhagen' },
     priceNote: { ar: 'من $380 إلى $3,400', en: 'From $380 to $3,400' },
   },
@@ -61,7 +61,7 @@ const HERO_SLIDES: Slide[] = [
       en: 'Hand-cut French cowhides slow-tanned in chestnut extracts for 60 days. Finished with beveled beeswax edges and solid cast brass Excella hardware.',
     },
     imageUrl:
-      'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1800&q=85',
+      '/img/nx-1548036328-c9fa89d128fa.jpg',
     accentNote: { ar: 'عمر افتراضي متوارث', en: 'Heirloom Grade Longevity' },
     priceNote: { ar: 'حقائب ومحافظ مقتناة', en: 'Briefcases & Folios' },
   },
@@ -77,7 +77,7 @@ const HERO_SLIDES: Slide[] = [
       en: 'Kiln-dried continuous grain walnut desk risers, 98-CRI sunlight spectrum task illumination, and gasket-mounted billet aluminum keyboards designed for deep creative focus.',
     },
     imageUrl:
-      'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1800&q=85',
+      '/img/nx-1527443224154-c4a3942d3acf.jpg',
     accentNote: { ar: 'تصميم ارغونومي مدروس', en: 'Precision Ergonomic Elevation' },
     priceNote: { ar: 'تجهيزات مكتبية راقية', en: 'Bespoke Studio Setup' },
   },
@@ -170,7 +170,7 @@ export const HeroSection: React.FC = () => {
 
           {/* Refined Typography Hierarchy */}
           <div className="space-y-2">
-            <h1 className="font-serif-luxury text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-fg leading-[1.08]">
+            <h1 className="font-serif-luxury text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-on-image leading-[1.08]">
               {slide.titleLine1[language]} <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#F5F5F5] via-[#E7D3A0] to-[#C9A961]">
                 {slide.titleLine2[language]}
@@ -179,7 +179,7 @@ export const HeroSection: React.FC = () => {
           </div>
 
           {/* Editorial Description */}
-          <p className="text-sm sm:text-base text-fg-muted max-w-2xl leading-relaxed font-light">
+          <p className="text-sm sm:text-base text-on-image-muted max-w-2xl leading-relaxed font-light">
             {slide.description[language]}
           </p>
 
@@ -203,28 +203,28 @@ export const HeroSection: React.FC = () => {
           </div>
 
           {/* Key Metrics Hallmark Bar */}
-          <div className="pt-8 border-t border-line/80 grid grid-cols-2 sm:grid-cols-4 gap-6 text-left rtl:text-right">
+          <div className="pt-8 border-t border-on-image/15 grid grid-cols-2 sm:grid-cols-4 gap-6 text-left rtl:text-right">
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeAuth}</div>
-              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-on-image">{t.hero.guaranteeAuth}</div>
+              <div className="text-[11px] font-mono text-on-image-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'سند معتمد' : 'Bespoke Roster'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeSwiss}</div>
-              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-on-image">{t.hero.guaranteeSwiss}</div>
+              <div className="text-[11px] font-mono text-on-image-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'معايير عالمية' : 'Artisanal Guilds'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-fg">{t.hero.guaranteeFreight}</div>
-              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-on-image">{t.hero.guaranteeFreight}</div>
+              <div className="text-[11px] font-mono text-on-image-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'شحن مؤمن' : 'Insured Freight'}
               </div>
             </div>
             <div>
-              <div className="font-serif-luxury text-xl font-bold text-fg">{language === 'ar' ? 'ضمان 5 سنوات' : '5-Year Vault'}</div>
-              <div className="text-[11px] font-mono text-fg-muted uppercase tracking-wider mt-0.5">
+              <div className="font-serif-luxury text-xl font-bold text-on-image">{language === 'ar' ? 'ضمان 5 سنوات' : '5-Year Vault'}</div>
+              <div className="text-[11px] font-mono text-on-image-muted uppercase tracking-wider mt-0.5">
                 {language === 'ar' ? 'ضمان استثنائي' : 'Artisanal Warranty'}
               </div>
             </div>

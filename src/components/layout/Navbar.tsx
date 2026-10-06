@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../i18n/useTranslation';
+import { SealSvg } from '../brand/Logo';
 import {
   ShoppingBag,
   Heart,
@@ -11,6 +12,8 @@ import {
   Globe,
   LogIn,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -29,6 +32,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
     searchQuery,
     setSearchQuery,
     setSelectedCategory,
+    theme,
+    toggleTheme,
   } = useStore();
 
   const { t, language, setLanguage } = useTranslation();
@@ -47,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
     }
   };
 
-  const isAdmin = currentUser.role === 'ADMIN';
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   return (
     <header className="sticky top-0 z-40 bg-ink/95 backdrop-blur-md border-b border-line">
@@ -65,15 +70,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
           </div>
 
           {/* Brand Logo */}
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-6">
             <button
               onClick={() => navigate('home')}
-              className="flex items-baseline gap-1.5 group text-left cursor-pointer"
+              className="flex items-baseline gap-2 group text-left cursor-pointer"
             >
-              <span className="font-serif-luxury text-2xl font-bold tracking-[0.2em] text-fg group-hover:text-gold transition-colors">
-                NEXORA
+              <SealSvg size={34} title="NEXORA heritage seal" />
+              <span className="flex flex-col items-start leading-none">
+                <span className="font-serif-luxury text-lg sm:text-xl font-bold tracking-[0.2em] text-fg group-hover:text-gold transition-colors">
+                  NEXORA
+                </span>
+                <span className="hidden sm:inline text-[8px] uppercase tracking-[0.34em] text-fg-faint font-mono mt-1">
+                  Atelier · Genève
+                </span>
               </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-gold" />
             </button>
 
             {/* Desktop Navigation */}
@@ -153,6 +163,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
               </button>
             </div>
 
+            {/* Theme Toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-2 text-fg-muted hover:text-gold transition-colors cursor-pointer"
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-pressed={theme === 'light'}
+              title={language === 'ar' ? (theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن') : theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+
             {/* Search Bar Input or Toggle */}
             <div className="relative">
               {isSearchOpen ? (
@@ -168,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   <button
                     type="button"
                     onClick={() => setIsSearchOpen(false)}
-                    className="ml-2 rtl:ml-0 rtl:mr-2 text-xs text-fg-faint hover:text-white cursor-pointer"
+                    className="ml-2 rtl:ml-0 rtl:mr-2 text-xs text-fg-faint hover:text-fg cursor-pointer"
                   >
                     {t.nav.searchCancel}
                   </button>
@@ -319,7 +341,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                     setIsMobileMenuOpen(false);
                     navigate('home');
                   }}
-                  className="text-left rtl:text-right py-2 text-danger hover:text-rose-300 font-medium flex items-center gap-2"
+                  className="text-left rtl:text-right py-2 text-danger hover:opacity-75 font-medium flex items-center gap-2"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>{language === 'ar' ? 'تسجيل الخروج' : 'Sign Out'}</span>
@@ -374,6 +396,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart, onOpenMarketIntellig
                   English
                 </button>
               </div>
+            </div>
+
+            {/* Mobile theme toggle */}
+            <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
+              <span className="text-xs text-fg-muted flex items-center gap-1.5">
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-gold" /> : <Moon className="w-4 h-4 text-gold" />}
+                <span>{language === 'ar' ? (theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن') : theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleTheme();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="px-3 py-1.5 rounded-md bg-surface border border-line text-xs font-semibold text-fg hover:border-gold hover:text-gold transition-colors cursor-pointer"
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
             </div>
           </div>
         </div>

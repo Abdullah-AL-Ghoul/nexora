@@ -25,7 +25,7 @@ export const AboutPage: React.FC = () => {
       {/* Hero Image */}
       <div className="relative aspect-[21/9] rounded-2xl overflow-hidden border border-line">
         <img
-          src="https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1400&q=80"
+          src="/img/nx-1522335789203-aabd1fc54bc9.jpg"
           alt="Horology atelier workbench"
           className="w-full h-full object-cover"
         />

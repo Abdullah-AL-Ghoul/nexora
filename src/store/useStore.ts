@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Product, ProductVariant, CartItem, WishlistItem, Coupon, User, Role } from '../types';
 import { push } from '../lib/routerBridge';
-import { validateCoupon as apiValidateCoupon } from '../lib/api';
+import { validateCoupon as apiValidateCoupon, logoutAccount } from '../lib/api';
 import { calculateDiscount, calculateShipping, calculateTax } from '../lib/pricing';
 
 export interface ToastMessage {
@@ -11,21 +11,6 @@ export interface ToastMessage {
   title: string;
   message?: string;
 }
-
-export const DEMO_USERS: Record<Role, User> = {
-  CUSTOMER: {
-    id: 'user_customer_01', email: 'customer@nexora.com', name: 'Alexander Hayes', role: 'CUSTOMER',
-    createdAt: '2026-02-14T14:20:00Z',
-  },
-  MANAGER: {
-    id: 'user_manager_01', email: 'manager@nexora.com', name: 'Elena Rostova', role: 'MANAGER',
-    createdAt: '2026-02-01T11:30:00Z',
-  },
-  ADMIN: {
-    id: 'user_admin_01', email: 'admin@nexora.com', name: 'Julian Vance', role: 'ADMIN',
-    createdAt: '2026-01-15T09:00:00Z',
-  },
-};
 
 interface AppStore {
   // Navigation
@@ -66,9 +51,8 @@ interface AppStore {
   isInWishlist: (productId: string) => boolean;
 
   // Auth & Roles
-  currentUser: User;
-  setCurrentUser: (user: User) => void;
-  switchRole: (role: Role) => void;
+  currentUser: User | null;
+  setCurrentUser: (user: User | null) => void;
   logout: () => void;
 
   // Toasts
@@ -79,6 +63,11 @@ interface AppStore {
   // Language & Localization
   language: 'ar' | 'en';
   setLanguage: (lang: 'ar' | 'en') => void;
+
+  // Theme (dark default; persisted so reloads keep the choice)
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
+  toggleTheme: () => void;
 
   // Quickview modal
   quickViewProduct: Product | null;
@@ -97,6 +86,16 @@ export const useStore = create<AppStore>()(
           document.documentElement.lang = lang;
         }
       },
+
+      // Theme
+      theme: 'dark',
+      setTheme: (theme) => {
+        set({ theme });
+        if (typeof document !== 'undefined') {
+          document.documentElement.dataset.theme = theme;
+        }
+      },
+      toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
 
       // Navigation — routes through react-router (see routerBridge.ts)
       currentRoute: 'home',
@@ -251,19 +250,18 @@ export const useStore = create<AppStore>()(
 
       isInWishlist: (productId) => get().wishlist.some((w) => w.productId === productId),
 
-      // Auth & Roles
-      currentUser: DEMO_USERS.CUSTOMER,
+      // Auth
+      currentUser: null,
       setCurrentUser: (user) => set({ currentUser: user }),
 
-      switchRole: (role) => {
-        const demoUser = DEMO_USERS[role];
-        set({ currentUser: demoUser });
-        get().addToast({ type: 'info', title: `Role Switched: ${role}`, message: `Now operating with ${role.toLowerCase()} privileges as ${demoUser.name}.` });
-      },
-
-      logout: () => {
-        set({ currentUser: DEMO_USERS.CUSTOMER });
-        get().addToast({ type: 'info', title: 'Signed Out', message: 'Returned to standard customer browsing session.' });
+      logout: async () => {
+        await logoutAccount();
+        set({ currentUser: null, appliedCoupon: null, couponError: null });
+        get().addToast({
+          type: 'info',
+          title: get().language === 'ar' ? 'تسجيل الخروج' : 'Signed Out',
+          message: get().language === 'ar' ? 'تم تسجيل الخروج بنجاح.' : 'You have been signed out.',
+        });
       },
 
       // Toasts
@@ -286,6 +284,7 @@ export const useStore = create<AppStore>()(
         wishlist: state.wishlist,
         appliedCoupon: state.appliedCoupon,
         currentUser: state.currentUser,
+        theme: state.theme,
       }),
     }
   )

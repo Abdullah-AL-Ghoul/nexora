@@ -155,7 +155,7 @@ export const MarketIntelligenceModal: React.FC<MarketIntelligenceModalProps> = (
 
         {/* Error message */}
         {error && (
-          <div className="p-4 rounded-lg bg-rose-950/40 border border-danger/40 text-xs text-rose-300">
+          <div className="p-4 rounded-lg bg-danger/10 border border-danger/40 text-xs text-danger">
             {error}
           </div>
         )}

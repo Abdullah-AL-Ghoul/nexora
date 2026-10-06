@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../i18n/useTranslation';
-import { fetchProductBySlug, fetchRelatedProducts, ApiProduct } from '../lib/api';
+import { fetchProductBySlug, fetchRelatedProducts, fetchReviews, submitReview, ApiProduct, Review } from '../lib/api';
 import { setMeta } from '../lib/seo';
 import { Product, ProductVariant } from '../types';
 import { ProductCard } from '../components/store/ProductCard';
@@ -36,7 +36,25 @@ export const ProductDetailPage: React.FC = () => {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [quantity, setQuantity] = useState(1);
 
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewForm, setReviewForm] = useState({ rating: 5, title: '', comment: '', userName: '' });
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
   const requestIdRef = useRef(0);
+
+  const loadReviews = (slugToLoad: string | undefined) => {
+    if (!slugToLoad) {
+      setReviews([]);
+      setReviewsLoading(false);
+      return;
+    }
+    setReviewsLoading(true);
+    fetchReviews(slugToLoad)
+      .then((r) => setReviews(r))
+      .catch(() => setReviews([]))
+      .finally(() => setReviewsLoading(false));
+  };
 
   const loadProduct = (slugToLoad: string | undefined) => {
     const requestId = ++requestIdRef.current;
@@ -100,6 +118,7 @@ export const ProductDetailPage: React.FC = () => {
 
   useEffect(() => {
     loadProduct(slug);
+    loadReviews(slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
@@ -398,6 +417,157 @@ export const ProductDetailPage: React.FC = () => {
               <span className="text-fg-muted">{t.product.serialVerification}</span>
               <span className="text-gold font-mono">{language === 'ar' ? 'رقم تسلسلي محفور بالليزر' : 'Laser-Etched Holographic Tag'}</span>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Reviews — real, server-backed */}
+      <section className="border-t border-line pt-12 space-y-8">
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="font-serif-luxury text-xl font-bold text-fg">
+            {language === 'ar' ? 'آراء المقتنين' : 'Collector Reviews'}
+            <span className="ml-2 align-middle text-xs font-sans font-normal text-fg-muted">
+              ({product.reviewsCount ?? reviews.length})
+            </span>
+          </h3>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-serif-luxury text-2xl font-semibold text-gold">
+              {Number(product.rating ?? 0).toFixed(1)}
+            </span>
+            <span className="text-fg-muted text-xs">
+              <span className="block text-gold" aria-hidden>
+                {'★'.repeat(Math.round(product.rating ?? 0))}{'☆'.repeat(5 - Math.round(product.rating ?? 0))}
+              </span>
+              {language === 'ar' ? 'متوسط التقييم' : 'average rating'}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-5 gap-8">
+          {/* Review form */}
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (reviewSubmitting) return;
+              if (!reviewForm.title.trim() || !reviewForm.comment.trim()) {
+                return;
+              }
+              setReviewSubmitting(true);
+              try {
+                const r = await submitReview(slug!, {
+                  rating: reviewForm.rating,
+                  title: reviewForm.title.trim(),
+                  comment: reviewForm.comment.trim(),
+                  userName: reviewForm.userName.trim() || undefined,
+                });
+                setReviews((prev) => [r, ...prev]);
+                setReviewForm({ rating: 5, title: '', comment: '', userName: '' });
+              } catch (err: any) {
+                alert(err?.message || 'Unable to submit review');
+              } finally {
+                setReviewSubmitting(false);
+              }
+            }}
+            className="lg:col-span-2 rounded-xl border border-line bg-surface p-6 space-y-4 h-fit"
+          >
+            <h4 className="text-sm font-semibold text-fg">
+              {language === 'ar' ? 'شارك تجربتك' : 'Share your experience'}
+            </h4>
+            <div>
+              <label className="block text-xs text-fg-muted mb-1.5">{language === 'ar' ? 'التقييم' : 'Rating'}</label>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setReviewForm((f) => ({ ...f, rating: n }))}
+                    aria-label={`${n} stars`}
+                    className={`text-2xl leading-none transition-colors ${n <= reviewForm.rating ? 'text-gold' : 'text-fg-faint'} cursor-pointer`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-fg-muted mb-1.5">{language === 'ar' ? 'العنوان' : 'Title'}</label>
+              <input
+                value={reviewForm.title}
+                onChange={(e) => setReviewForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder={language === 'ar' ? 'عنوان مختصر لرأييك' : 'Short headline for your review'}
+                className="w-full bg-raised border border-line text-fg px-3 py-2.5 rounded-lg outline-none focus:border-gold text-xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-fg-muted mb-1.5">{language === 'ar' ? 'الرأي' : 'Comment'}</label>
+              <textarea
+                value={reviewForm.comment}
+                onChange={(e) => setReviewForm((f) => ({ ...f, comment: e.target.value }))}
+                rows={3}
+                placeholder={language === 'ar' ? 'صف جودة القطعة وتجربتك معها...' : 'Describe the quality and your experience...'}
+                className="w-full bg-raised border border-line text-fg px-3 py-2.5 rounded-lg outline-none focus:border-gold text-xs resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-fg-muted mb-1.5">
+                {language === 'ar' ? 'الاسم (اختياري)' : 'Name (optional)'}
+              </label>
+              <input
+                value={reviewForm.userName}
+                onChange={(e) => setReviewForm((f) => ({ ...f, userName: e.target.value }))}
+                placeholder={language === 'ar' ? 'اسمك' : 'Your name'}
+                className="w-full bg-raised border border-line text-fg px-3 py-2.5 rounded-lg outline-none focus:border-gold text-xs"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={reviewSubmitting}
+              className="w-full py-2.5 rounded-lg bg-gold text-ink hover:bg-gold-soft font-semibold text-xs uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {reviewSubmitting
+                ? (language === 'ar' ? 'جارٍ الإرسال...' : 'Submitting...')
+                : (language === 'ar' ? 'نشر الرأي' : 'Submit Review')}
+            </button>
+          </form>
+
+          {/* Reviews list */}
+          <div className="lg:col-span-3 space-y-4">
+            {reviewsLoading && (
+              <p className="text-xs text-fg-faint">{language === 'ar' ? 'جارٍ تحميل الآراء...' : 'Loading reviews...'}</p>
+            )}
+            {!reviewsLoading && reviews.length === 0 && (
+              <p className="text-sm text-fg-muted border border-dashed border-line rounded-xl p-8 text-center">
+                {language === 'ar' ? 'لا توجد آراء بعد — كن أول من يشارك.' : 'No reviews yet — be the first to share yours.'}
+              </p>
+            )}
+            {reviews.map((rv) => (
+              <div key={rv.id} className="rounded-xl border border-line bg-surface p-5">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-gold/15 border border-gold/40 flex items-center justify-center text-gold text-xs font-bold">
+                      {rv.userName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-fg">{rv.userName}</p>
+                      {rv.isVerifiedPurchase && (
+                        <p className="text-[10px] text-success flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {language === 'ar' ? 'شراء موثق' : 'Verified purchase'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-gold text-xs font-mono">
+                    {new Date(rv.createdAt).toLocaleDateString(language === 'ar' ? 'ar' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <div className="text-gold text-sm mb-1" aria-label={`${rv.rating} stars`}>
+                  {'★'.repeat(rv.rating)}{'☆'.repeat(5 - rv.rating)}
+                </div>
+                <p className="text-xs font-semibold text-fg">{rv.title}</p>
+                <p className="text-xs text-fg-muted leading-relaxed mt-1">{rv.comment}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>

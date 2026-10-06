@@ -1,24 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // NEXORA API client — single source of truth for server communication.
-// Every request attaches the current Firebase ID token via Authorization header.
-// Firebase Auth is imported lazily (dynamic import) so the ~180KB SDK is not
-// part of the initial route chunk — it only loads when a real user signs in.
+// Every request attaches the current session token via Authorization header.
+// Tokens: local JWT sessions (primary) or Firebase ID token (secondary).
+// Firebase Auth is imported lazily so the ~180KB SDK only loads when needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function getToken(): Promise<string> {
-  // Demo/local bypass: if no Firebase user is signed in, fall back to 'demo'
-  // only when explicitly allowed (guards are still enforced server-side).
+const TOKEN_KEY = 'nexora_auth_token';
+
+export function getStoredToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+export function setStoredToken(token: string | null) {
   try {
-    const { getAuth } = await import('firebase/auth');
-    const auth = getAuth();
-    if (auth.currentUser) {
-      const t = await auth.currentUser.getIdToken();
-      if (t) return t;
-    }
-  } catch {
-    // Ignore — fall through to demo
-  }
-  return 'demo';
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* storage unavailable */ }
 }
 
 const API_BASE = '/api';
@@ -29,7 +26,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string>),
   };
   const token = await getToken();
-  headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
@@ -46,12 +43,55 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function getToken(): Promise<string> {
+  // 1) Local JWT session (primary)
+  const local = getStoredToken();
+  if (local) return local;
+  // 2) Firebase ID token (secondary — only if a user is actually signed in)
+  try {
+    const { getAuth } = await import('firebase/auth');
+    const auth = getAuth();
+    if (auth.currentUser) {
+      const t = await auth.currentUser.getIdToken();
+      if (t) return t;
+    }
+  } catch { /* ignore */ }
+  // 3) Guest — no token; server treats as unauthenticated
+  return '';
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
+
+export interface AuthSession {
+  token: string;
+  user: {
+    id: string; email: string; name: string; role: string;
+    phone?: string | null; avatar?: string | null; createdAt?: string;
+  };
+}
+
+export async function registerAccount(name: string, email: string, password: string): Promise<AuthSession> {
+  const session = await api.post<AuthSession>('/auth/register', { name, email, password });
+  setStoredToken(session.token);
+  return session;
+}
+
+export async function loginAccount(email: string, password: string): Promise<AuthSession> {
+  const session = await api.post<AuthSession>('/auth/login', { email, password });
+  setStoredToken(session.token);
+  return session;
+}
+
+export async function logoutAccount(): Promise<void> {
+  try { await api.post('/auth/logout'); } catch { /* server best-effort */ }
+  setStoredToken(null);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed domain helpers below mirror the old db.ts surface (now async).
@@ -103,6 +143,26 @@ export const fetchFeaturedProducts = () =>
 export const fetchRelatedProducts = (slug: string) =>
   api.get<{ products: ApiProduct[] }>(`/products/related/${slug}`).then((d) => d.products);
 
+export interface Review {
+  id: string;
+  productId: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string | null;
+  rating: number;
+  title: string;
+  comment: string;
+  isVerifiedPurchase: boolean;
+  isApproved: boolean;
+  createdAt: string;
+}
+
+export const fetchReviews = (slug: string) =>
+  api.get<{ reviews: Review[] }>(`/products/${slug}/reviews`).then((d) => d.reviews);
+
+export const submitReview = (slug: string, payload: { rating: number; title: string; comment: string; userName?: string }) =>
+  api.post<{ review: Review }>(`/products/${slug}/reviews`, payload).then((d) => d.review);
+
 export interface ApiCategory {
   id: string; name: string; slug: string; description: string; image_url: string; item_count: number;
 }
@@ -111,8 +171,12 @@ export const fetchCategories = () =>
   api.get<{ categories: ApiCategory[] }>('/categories').then((d) => d.categories);
 
 export const fetchCurrentUser = () =>
-  api.get<{ user: { id: string; email: string; name: string; role: string; avatar?: string | null } }>('/users/me')
+  api.get<{ user: { id: string; email: string; name: string; role: string; avatar?: string | null; phone?: string | null; created_at?: string } }>('/users/me')
     .then((d) => d.user);
+
+export const fetchUsers = () =>
+  api.get<{ users: Array<{ id: string; email: string; name: string; role: string; avatar?: string | null; phone?: string | null; created_at?: string }> }>('/users')
+    .then((d) => d.users);
 
 export interface ValidateCouponResult {
   valid: boolean;
@@ -152,6 +216,7 @@ export const fetchAllProducts = () =>
 
 // Admin write operations (server-enforced ADMIN/MANAGER)
 export const saveProduct = (payload: any) => api.post<{ product: any }>('/products', payload).then((d) => d.product);
+export const updateProduct = (id: string, payload: any) => api.put<{ product: any }>(`/products/${id}`, payload).then((d) => d.product);
 export const deleteProduct = (id: string) => api.delete(`/products/${id}`);
 export const saveCategory = (payload: any) => api.post<{ category: any }>('/categories', payload).then((d) => d.category);
 export const deleteCategory = (id: string) => api.delete(`/categories/${id}`);

@@ -119,36 +119,39 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
 
 // ─── New API Routes ──────────────────────────────────────────────────────────
 
-async function registerRoutes() {
-  const [productsRouter, ordersRouter, categoriesRouter, couponsRouter, inventoryRouter, usersRouter] = await Promise.all([
+export async function createApp() {
+  const [productsRouter, ordersRouter, categoriesRouter, couponsRouter, inventoryRouter, usersRouter, authRouter, newsletterRouter] = await Promise.all([
     import('./server/routes/products.js'),
     import('./server/routes/orders.js'),
     import('./server/routes/categories.js'),
     import('./server/routes/coupons.js'),
     import('./server/routes/inventory.js'),
     import('./server/routes/users.js'),
+    import('./server/routes/auth.js'),
+    import('./server/routes/newsletter.js'),
   ]);
 
+  app.use('/api/auth', authRouter.authRouter());
   app.use('/api/products', productsRouter.productsRouter());
   app.use('/api/orders', ordersRouter.ordersRouter());
   app.use('/api/categories', categoriesRouter.categoriesRouter());
   app.use('/api/coupons', couponsRouter.couponsRouter());
   app.use('/api/inventory', inventoryRouter.inventoryRouter());
   app.use('/api/users', usersRouter.usersRouter());
+  app.use('/api/newsletter', newsletterRouter.newsletterRouter());
 
   // Seed endpoint
   const { seedProducts } = await import('./server/routes/seed.js');
   app.post('/api/seed', seedProducts);
-}
 
-registerRoutes().catch((err) => {
-  console.error('Failed to register routes:', err);
-  process.exit(1);
-});
+  return app;
+}
 
 // ─── Vite + Server Start ────────────────────────────────────────────────────
 
 async function startServer() {
+  await createApp();
+
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req: Request, res: Response) => {
@@ -164,7 +167,17 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+// Only auto-start when run directly (e.g. `tsx server.ts`); importing this
+// module from tests must not bind a port. Vitest sets VITEST to the runner file.
+const isEntryPoint =
+  typeof process !== 'undefined' &&
+  !!process.argv[1] &&
+  !process.argv[1].includes('vitest') &&
+  !process.env.VITEST;
+
+if (isEntryPoint) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

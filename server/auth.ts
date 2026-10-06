@@ -1,12 +1,12 @@
 import * as jose from 'jose';
-import { upsertUser } from './db.js';
+import { getUserById, upsertUser } from './db.js';
 
-// Fetch Google public keys for Firebase ID token verification
+// Firebase ID token verification (Google public keys) — secondary path
 const JWKS = jose.createRemoteJWKSet(
   new URL('https://www.googleapis.com/robot/v1/metadata/google_id_tokens/jwks')
 );
 
-// Cache for verified tokens (5 min TTL)
+// Cache for verified Firebase tokens (5 min TTL)
 const tokenCache = new Map<string, { payload: jose.JWTPayload; exp: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -15,6 +15,11 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? 'ynab2025@gmail.com,admin@nexo
   .split(',')
   .map(e => e.trim().toLowerCase())
   .filter(Boolean);
+
+// Local session JWT — signed HS256 with a server-side secret
+const JWT_SECRET = process.env.JWT_SECRET ?? 'nexora-dev-only-secret-change-me';
+const LOCAL_ISSUER = 'nexora-auth';
+const SESSION_TTL_S = 60 * 60 * 24 * 7; // 7 days
 
 export interface AuthUser {
   uid: string;
@@ -33,11 +38,47 @@ export class HttpError extends Error {
   }
 }
 
+// ─── Local (email/password) sessions ──────────────────────────────────────────
+
+export async function signLocalToken(user: {
+  id: string; email: string; name: string; role: string;
+}): Promise<string> {
+  return new jose.SignJWT({ email: user.email, name: user.name, role: user.role })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(user.id)
+    .setIssuer(LOCAL_ISSUER)
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_TTL_S}s`)
+    .sign(new TextEncoder().encode(JWT_SECRET));
+}
+
+/** Verify a local HS256 session token; returns the DB-backed user or null. */
+async function verifyLocalToken(token: string): Promise<AuthUser | null> {
+  try {
+    const { payload } = await jose.jwtVerify(token, new TextEncoder().encode(JWT_SECRET), {
+      issuer: LOCAL_ISSUER,
+      algorithms: ['HS256'],
+    });
+    const uid = payload.sub as string;
+    const dbUser = uid ? getUserById(uid) : undefined;
+    if (!dbUser) return null;
+    return {
+      uid: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name || 'Distinguished Collector',
+      role: dbUser.role as AuthUser['role'],
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Firebase ID token verification (secondary path) ─────────────────────────
+
 export async function verifyIdToken(token: string): Promise<AuthUser | null> {
-  if (!token || token === 'demo') return null; // demo mode = anonymous access
+  if (!token) return null;
 
   try {
-    // Check cache first
     const cached = tokenCache.get(token);
     if (cached && cached.exp > Date.now()) {
       return payloadToUser(cached.payload);
@@ -68,8 +109,9 @@ function payloadToUser(payload: jose.JWTPayload): AuthUser {
 }
 
 /**
- * Reads the Firebase ID token from an Express request and returns the
- * verified user (role determined server-side). Throws HttpError on failure.
+ * Reads the bearer token from an Express request and returns the verified user
+ * (role determined server-side). Tries the local session JWT first, then the
+ * Firebase ID token. A missing/invalid token means *guest*. Throws on failure.
  */
 export async function authMiddleware(
   req: { headers?: Record<string, string | string[] | undefined> },
@@ -83,24 +125,27 @@ export async function authMiddleware(
     throw new HttpError(401, 'Authentication required.');
   }
 
-  // Demo bypass: allow 'demo' token for local testing without Firebase
-  if (token === 'demo') {
-    return { uid: 'demo', email: 'demo@nexora.local', name: 'Demo User', role: 'ADMIN' };
+  // Local session JWT first (fast, no network)
+  const local = await verifyLocalToken(token);
+  if (local) return local;
+
+  // Firebase (Google) ID token second
+  const firebaseUser = await verifyIdToken(token);
+  if (firebaseUser) {
+    // Keep our DB in sync with the server-determined role (no password set)
+    upsertUser(firebaseUser.uid, firebaseUser.email, firebaseUser.name, firebaseUser.role);
+    return firebaseUser;
   }
 
-  const user = await verifyIdToken(token);
-  if (!user) {
-    if (opts.optional) return null;
-    throw new HttpError(401, 'Invalid or expired token.');
-  }
-
-  // Upsert user in our DB with server-determined role
-  await upsertUser(user.uid, user.email, user.name, user.role);
-
-  return user;
+  if (opts.optional) return null;
+  throw new HttpError(401, 'Invalid or expired token.');
 }
 
 export function requireRole(user: AuthUser | null, ...roles: AuthUser['role'][]): void {
   if (!user) throw new HttpError(401, 'Authentication required.');
   if (!roles.includes(user.role)) throw new HttpError(403, 'Insufficient permissions.');
+}
+
+export function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
 }

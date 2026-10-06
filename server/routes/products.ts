@@ -86,6 +86,78 @@ export function productsRouter() {
     res.json({ products: rows.map(rowToFeed) });
   });
 
+  // GET /api/products/:slug/reviews — public list of approved reviews
+  router.get('/:slug/reviews', async (req: Request, res: Response) => {
+    try {
+      const product = get<any>('SELECT * FROM products WHERE slug = ?', [req.params.slug]);
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      const rows = all<any>(
+        'SELECT * FROM reviews WHERE product_id = ? AND is_approved = 1 ORDER BY created_at DESC LIMIT 50',
+        [product.id]
+      );
+      res.json({
+        reviews: rows.map((r) => ({
+          id: r.id, productId: r.product_id, userId: r.user_id, userName: r.user_name,
+          userAvatar: r.user_avatar, rating: r.rating, title: r.title, comment: r.comment,
+          isVerifiedPurchase: !!r.is_verified_purchase, isApproved: !!r.is_approved,
+          createdAt: r.created_at,
+        })),
+      });
+    } catch (e: any) {
+      console.error('reviews list error:', e);
+      res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+  });
+
+  // POST /api/products/:slug/reviews — submit a review (supports guests with a name)
+  router.post('/:slug/reviews', async (req: Request, res: Response) => {
+    try {
+      const product = get<any>('SELECT * FROM products WHERE slug = ?', [req.params.slug]);
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+
+      const { rating, title, comment, userName } = req.body ?? {};
+      if (!rating || typeof rating !== 'number' || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: 'Rating must be between 1 and 5.' });
+      }
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        return res.status(400).json({ error: 'A review title is required.' });
+      }
+      if (!comment || typeof comment !== 'string' || comment.trim().length === 0) {
+        return res.status(400).json({ error: 'A review comment is required.' });
+      }
+
+      const user = await authMiddleware(req as any, { optional: true });
+      const id = `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const displayName = user?.name ?? (typeof userName === 'string' && userName.trim() ? userName.trim() : 'Distinguished Collector');
+
+      run(
+        `INSERT INTO reviews (id,product_id,user_id,user_name,user_avatar,rating,title,comment,is_verified_purchase,is_approved,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, product.id, user?.uid ?? 'guest', displayName, null, rating, title.trim(), comment.trim(), user ? 1 : 0, 1, new Date().toISOString()]
+      );
+
+      // Recompute aggregate rating + count (avg of all approved reviews)
+      const agg = get<{ r: number; c: number }>(
+        'SELECT ROUND(AVG(rating),1) as r, COUNT(*) as c FROM reviews WHERE product_id = ? AND is_approved = 1',
+        [product.id]
+      );
+      run('UPDATE products SET rating = ?, reviews_count = ? WHERE id = ?',
+        [agg?.r ?? product.rating, agg?.c ?? product.reviews_count, product.id]);
+
+      res.status(201).json({
+        review: {
+          id, productId: product.id, userId: user?.uid ?? 'guest', userName: displayName,
+          rating, title: title.trim(), comment: comment.trim(), isVerifiedPurchase: !!user, isApproved: true,
+          createdAt: new Date().toISOString(),
+        },
+      });
+    } catch (e: any) {
+      if (e instanceof HttpError) return res.status(e.status).json({ error: e.message });
+      console.error('review create error:', e);
+      res.status(500).json({ error: 'Failed to submit review' });
+    }
+  });
+
   // GET /api/products/:slug
   router.get('/:slug', async (req: Request, res: Response) => {
     const row = get<any>('SELECT * FROM products WHERE slug = ? AND status = ?', [req.params.slug, 'ACTIVE']);
@@ -103,6 +175,8 @@ export function productsRouter() {
       const d = result.data;
       const id = `prod_${Date.now()}`;
       const slug = d.slug ?? d.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+      const book = get<{ id: string }>('SELECT id FROM products WHERE slug = ?', [slug]);
+      if (book) throw new HttpError(409, 'Another product already uses this profile link (slug).');
       const sku = d.sku ?? `NX-${Date.now().toString().slice(-4)}`;
       const now = new Date().toISOString();
       const cat = get<{ name: string }>('SELECT name FROM categories WHERE id = ?', [d.categoryId]);
@@ -116,11 +190,57 @@ export function productsRouter() {
         5.0, 0, d.status ?? 'ACTIVE', d.isFeatured ? 1 : 0, d.isBestSeller ? 1 : 0, d.isTrending ? 1 : 0,
         JSON.stringify(d.materials ?? []), now, now]);
 
-      const product = get<any>('SELECT * FROM products WHERE id = ?', [id]);
+      const product = rowToFeed(get<any>('SELECT * FROM products WHERE id = ?', [id])!);
       res.status(201).json({ product });
     } catch (e: any) {
       if (e instanceof HttpError) { return res.status(e.status).json({ error: e.message }); }
       else { console.error(e); res.status(500).json({ error: 'Failed to create product' }); }
+    }
+  });
+
+  // PUT /api/products/:id — update existing product (ADMIN/MANAGER)
+  router.put('/:id', async (req: Request, res: Response) => {
+    try {
+      const user = await authMiddleware(req as any);
+      requireRole(user, 'ADMIN', 'MANAGER');
+
+      const id = req.params.id;
+      const existing = get<any>('SELECT * FROM products WHERE id = ?', [id]);
+      if (!existing) return res.status(404).json({ error: 'Product not found' });
+
+      const result = CreateProductSchema.safeParse(req.body);
+      if (!result.success) return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      const d = result.data;
+
+      // Slug conflict check: another product already owns this slug → 409
+      const slug = d.slug ?? existing.slug;
+      const slugOwner = get<{ id: string }>('SELECT id FROM products WHERE slug = ? AND id != ?', [slug, id]);
+      if (slugOwner) return res.status(409).json({ error: 'Another product already uses this profile link (slug).' });
+
+      const cat = get<{ name: string }>('SELECT name FROM categories WHERE id = ?', [d.categoryId]);
+      const categoryName = cat?.name ?? existing.category_name;
+      const now = new Date().toISOString();
+
+      run(`
+        UPDATE products SET
+          name=?, slug=?, tagline=?, description=?, price=?, compare_at_price=?, sku=?,
+          stock=?, category_id=?, category_name=?, images=?, variants=?, status=?,
+          is_featured=?, is_best_seller=?, is_trending=?, materials=?, updated_at=?
+        WHERE id=?
+      `, [
+        d.name, slug, d.tagline ?? existing.tagline, d.description ?? existing.description,
+        d.price, d.compareAtPrice ?? existing.compare_at_price, d.sku ?? existing.sku,
+        d.stock ?? existing.stock, d.categoryId, categoryName, JSON.stringify(d.images ?? JSON.parse(existing.images || '[]')),
+        JSON.stringify(d.variants ?? JSON.parse(existing.variants || '[]')), d.status ?? existing.status,
+        d.isFeatured ? 1 : 0, d.isBestSeller ? 1 : 0, d.isTrending ? 1 : 0,
+        JSON.stringify(d.materials ?? JSON.parse(existing.materials || '[]')), now, id,
+      ]);
+
+      res.json({ product: rowToFeed(get<any>('SELECT * FROM products WHERE id = ?', [id])!) });
+    } catch (e: any) {
+      if (e instanceof HttpError) return res.status(e.status).json({ error: e.message });
+      console.error(e);
+      res.status(500).json({ error: 'Failed to update product' });
     }
   });
 

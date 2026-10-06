@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../i18n/useTranslation';
+import { api } from '../../lib/api';
+import { SealSvg } from '../brand/Logo';
 import { Shield, Award, RotateCcw, Clock, ArrowRight, Check } from 'lucide-react';
 
 export const Footer: React.FC = () => {
@@ -8,19 +10,39 @@ export const Footer: React.FC = () => {
   const { t, language } = useTranslation();
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email.trim() && email.includes('@')) {
+    if (isSubscribing) return;
+    if (!email.trim() || !email.includes('@')) {
+      addToast({
+        type: 'error',
+        title: language === 'ar' ? 'بريد غير صالح' : 'Invalid Email',
+        message: language === 'ar' ? 'يرجى إدخال بريد إلكتروني صحيح.' : 'Please enter a valid email address.',
+      });
+      return;
+    }
+    setIsSubscribing(true);
+    try {
+      await api.post('/newsletter', { email: email.trim(), locale: language });
       setSubscribed(true);
       addToast({
         type: 'success',
         title: language === 'ar' ? 'تم الاشتراك بنجاح' : 'Atelier Gazette Subscription Active',
         message: language === 'ar'
-          ? `سيتم إرسال إشعارات الإصدارات الحصرية إلى ${email}.`
-          : `Dispatches on limited releases will be forwarded to ${email}.`,
+          ? `سيتم إرسال إشعارات الإصدارات الحصرية إلى ${email.trim()}.`
+          : `Dispatches on limited releases will be forwarded to ${email.trim()}.`,
       });
       setEmail('');
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: language === 'ar' ? 'فشل الاشتراك' : 'Subscription Failed',
+        message: err?.message || 'Unable to subscribe at this time.',
+      });
+    } finally {
+      setIsSubscribing(false);
     }
   };
 
@@ -100,9 +122,12 @@ export const Footer: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
           {/* Brand Manifesto */}
           <div className="md:col-span-2 space-y-4">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-serif-luxury text-2xl font-bold tracking-[0.2em] text-fg">NEXORA</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <div className="flex items-center gap-2.5">
+              <SealSvg size={40} title="NEXORA heritage seal" />
+              <span className="flex flex-col leading-none">
+                <span className="font-serif-luxury text-2xl font-bold tracking-[0.2em] text-fg">NEXORA</span>
+                <span className="mt-1 text-[8px] uppercase tracking-[0.34em] text-fg-faint font-mono">Atelier · Genève</span>
+              </span>
             </div>
             <p className="text-xs text-fg-muted leading-relaxed max-w-sm">
               {t.footer.brandTagline}
@@ -218,7 +243,7 @@ export const Footer: React.FC = () => {
                   {language === 'ar' ? 'فلسفة وتراث نكسورا' : 'Brand Philosophy'}
                 </button>
               </li>
-              {currentUser.role === 'ADMIN' && (
+              {currentUser?.role === 'ADMIN' && (
                 <li>
                   <button onClick={() => navigate('admin-dashboard')} className="hover:text-gold transition-colors cursor-pointer">
                     {language === 'ar' ? 'لوحة التحكم والعمليات (Console)' : 'Operations Console'}

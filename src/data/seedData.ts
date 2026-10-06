@@ -7,7 +7,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Julian Vance',
     role: 'ADMIN',
     phone: '+1 (555) 890-2341',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    avatar: '/img/nx-1534528741775-53994a69daeb.jpg',
     createdAt: '2026-01-15T09:00:00Z',
   },
   {
@@ -16,7 +16,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Elena Rostova',
     role: 'MANAGER',
     phone: '+1 (555) 732-9102',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=200&q=80',
+    avatar: '/img/nx-1580489944761-15a19d654956.jpg',
     createdAt: '2026-02-01T11:30:00Z',
   },
   {
@@ -25,7 +25,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Alexander Hayes',
     role: 'CUSTOMER',
     phone: '+1 (555) 419-8803',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    avatar: '/img/nx-1507003211169-0a1dd7228f2d.jpg',
     createdAt: '2026-02-14T14:20:00Z',
   },
 ];
@@ -36,7 +36,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Timepieces',
     slug: 'timepieces',
     description: 'Mechanical precision, sapphire crystals, and horological craftsmanship.',
-    imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1522335789203-aabd1fc54bc9.jpg',
     itemCount: 6,
   },
   {
@@ -44,7 +44,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Audio Engineering',
     slug: 'audio-engineering',
     description: 'Acoustic fidelity, beryllium drivers, and machined aluminum enclosures.',
-    imageUrl: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1546435770-a3e426bf472b.jpg',
     itemCount: 6,
   },
   {
@@ -52,7 +52,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Minimalist Leather',
     slug: 'minimalist-leather',
     description: 'Full-grain vegetable-tanned hides, hand-burnished edges, and durable brass.',
-    imageUrl: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1548036328-c9fa89d128fa.jpg',
     itemCount: 6,
   },
   {
@@ -60,7 +60,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Architectural Workspace',
     slug: 'architectural-workspace',
     description: 'Solid walnut, anodized aluminum, and ergonomic desktop essentials.',
-    imageUrl: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1527443224154-c4a3942d3acf.jpg',
     itemCount: 6,
   },
   {
@@ -68,7 +68,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Modern Optics',
     slug: 'modern-optics',
     description: 'Japanese titanium frames, Carl Zeiss polarized lenses, and architectural silhouettes.',
-    imageUrl: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1511499767150-a48a237f0083.jpg',
     itemCount: 6,
   },
   {
@@ -76,7 +76,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Technical Apparel',
     slug: 'technical-apparel',
     description: 'Merino wool, weather-resistant membranes, and ergonomic tailored cuts.',
-    imageUrl: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1489987707025-afc232f7ea0f.jpg',
     itemCount: 6,
   },
   {
@@ -84,7 +84,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Fine Accessories',
     slug: 'fine-accessories',
     description: 'Machined pens, geometric cufflinks, and everyday titanium carry.',
-    imageUrl: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1617038260897-41a1f14a8ca0.jpg',
     itemCount: 6,
   },
   {
@@ -92,7 +92,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Objects of Art',
     slug: 'objects-of-art',
     description: 'Cast bronze, ceramic vessels, and minimalist sculptural accents.',
-    imageUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=800&q=80',
+    imageUrl: '/img/nx-1579783900882-c0d3dad7b119.jpg',
     itemCount: 6,
   },
 ];
@@ -112,9 +112,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_01_a', url: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80', altText: 'Aethelgard Chronograph dial view', isPrimary: true, order: 0 },
-      { id: 'img_tp_01_b', url: 'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=1000&q=80', altText: 'Aethelgard Chronograph wrist fit', isPrimary: false, order: 1 },
-      { id: 'img_tp_01_c', url: 'https://images.unsplash.com/photo-1547996160-71dfa63582b3?auto=format&fit=crop&w=1000&q=80', altText: 'Caseback showing mechanical movement', isPrimary: false, order: 2 },
+      { id: 'img_tp_01_a', url: '/img/nx-1522335789203-aabd1fc54bc9.jpg', altText: 'Aethelgard Chronograph dial view', isPrimary: true, order: 0 },
+      { id: 'img_tp_01_b', url: '/img/nx-1524805444758-089113d48a6d.jpg', altText: 'Aethelgard Chronograph wrist fit', isPrimary: false, order: 1 },
+      { id: 'img_tp_01_c', url: '/img/nx-1547996160-71dfa63582b3.jpg', altText: 'Caseback showing mechanical movement', isPrimary: false, order: 2 },
     ],
     variants: [
       { id: 'var_tp_01_noir', productId: 'prod_tp_01', name: 'Obsidian Black / Steel Bracelet', sku: 'NX-TP-01-OBS', price: 1850, stock: 8, color: 'Obsidian Black' },
@@ -146,8 +146,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_02_a', url: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1000&q=80', altText: 'Vanguard Minimalist dial', isPrimary: true, order: 0 },
-      { id: 'img_tp_02_b', url: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=80', altText: 'Vanguard minimal profile', isPrimary: false, order: 1 },
+      { id: 'img_tp_02_a', url: '/img/nx-1509042239860-f550ce710b93.jpg', altText: 'Vanguard Minimalist dial', isPrimary: true, order: 0 },
+      { id: 'img_tp_02_b', url: '/img/nx-1523275335684-37898b6baf30.jpg', altText: 'Vanguard minimal profile', isPrimary: false, order: 1 },
     ],
     variants: [
       { id: 'var_tp_02_silver', productId: 'prod_tp_02', name: 'Silver Slate / Calfskin', sku: 'NX-TP-02-SLV', price: 1240, stock: 12, color: 'Silver' },
@@ -178,7 +178,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_03_a', url: 'https://images.unsplash.com/photo-1533139502658-0198f920d8e8?auto=format&fit=crop&w=1000&q=80', altText: 'Nautilus Diver front view', isPrimary: true, order: 0 },
+      { id: 'img_tp_03_a', url: '/img/nx-1533139502658-0198f920d8e8.jpg', altText: 'Nautilus Diver front view', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 5.0,
@@ -206,7 +206,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_04_a', url: 'https://images.unsplash.com/photo-1542496658-e33a6d0d50f6?auto=format&fit=crop&w=1000&q=80', altText: 'Astral Regulator front view', isPrimary: true, order: 0 },
+      { id: 'img_tp_04_a', url: '/img/nx-1542496658-e33a6d0d50f6.jpg', altText: 'Astral Regulator front view', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -235,7 +235,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_05_a', url: 'https://images.unsplash.com/photo-1526045478516-99145907023c?auto=format&fit=crop&w=1000&q=80', altText: 'Solstice Tourbillon dial', isPrimary: true, order: 0 },
+      { id: 'img_tp_05_a', url: '/img/nx-1526045478516-99145907023c.jpg', altText: 'Solstice Tourbillon dial', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 5.0,
@@ -263,7 +263,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_timepieces',
     categoryName: 'Timepieces',
     images: [
-      { id: 'img_tp_06_a', url: 'https://images.unsplash.com/photo-1508057198894-247b23fe5ade?auto=format&fit=crop&w=1000&q=80', altText: 'Kallisto Field Watch', isPrimary: true, order: 0 },
+      { id: 'img_tp_06_a', url: '/img/nx-1508057198894-247b23fe5ade.jpg', altText: 'Kallisto Field Watch', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -294,8 +294,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_01_a', url: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=1000&q=80', altText: 'Aura Planar Headphones on stand', isPrimary: true, order: 0 },
-      { id: 'img_au_01_b', url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1000&q=80', altText: 'Aura headband detail', isPrimary: false, order: 1 },
+      { id: 'img_au_01_a', url: '/img/nx-1546435770-a3e426bf472b.jpg', altText: 'Aura Planar Headphones on stand', isPrimary: true, order: 0 },
+      { id: 'img_au_01_b', url: '/img/nx-1505740420928-5e560c06d30e.jpg', altText: 'Aura headband detail', isPrimary: false, order: 1 },
     ],
     variants: [
       { id: 'var_au_01_walnut', productId: 'prod_au_01', name: 'Walnut / Black Anodized', sku: 'NX-AU-01-WLT', price: 1450, stock: 10, material: 'Walnut' },
@@ -326,7 +326,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_02_a', url: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=1000&q=80', altText: 'Cenotaph speaker monolithic form', isPrimary: true, order: 0 },
+      { id: 'img_au_02_a', url: '/img/nx-1545454675-3531b543be5d.jpg', altText: 'Cenotaph speaker monolithic form', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -355,7 +355,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_03_a', url: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&w=1000&q=80', altText: 'Solis earbuds in metal charging case', isPrimary: true, order: 0 },
+      { id: 'img_au_03_a', url: '/img/nx-1590658268037-6bf12165a8df.jpg', altText: 'Solis earbuds in metal charging case', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_au_03_matte_black', productId: 'prod_au_03', name: 'Matte Obsidian', sku: 'NX-AU-03-BLK', price: 380, stock: 20, color: 'Obsidian' },
@@ -386,7 +386,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_04_a', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1000&q=80', altText: 'Vesper tube amplifier with glowing tubes', isPrimary: true, order: 0 },
+      { id: 'img_au_04_a', url: '/img/nx-1558494949-ef010cbdcc31.jpg', altText: 'Vesper tube amplifier with glowing tubes', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 5.0,
@@ -414,7 +414,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_05_a', url: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=1000&q=80', altText: 'Aeon Studio Monitors pair', isPrimary: true, order: 0 },
+      { id: 'img_au_05_a', url: '/img/nx-1545454675-3531b543be5d.jpg', altText: 'Aeon Studio Monitors pair', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -442,7 +442,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_audio',
     categoryName: 'Audio Engineering',
     images: [
-      { id: 'img_au_06_a', url: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1000&q=80', altText: 'Chordal Silver Audio Cable coiled', isPrimary: true, order: 0 },
+      { id: 'img_au_06_a', url: '/img/nx-1617038260897-41a1f14a8ca0.jpg', altText: 'Chordal Silver Audio Cable coiled', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.6,
@@ -473,8 +473,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_01_a', url: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=80', altText: 'Atelier Folio briefcase front view', isPrimary: true, order: 0 },
-      { id: 'img_le_01_b', url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1000&q=80', altText: 'Atelier briefcase interior compartments', isPrimary: false, order: 1 },
+      { id: 'img_le_01_a', url: '/img/nx-1548036328-c9fa89d128fa.jpg', altText: 'Atelier Folio briefcase front view', isPrimary: true, order: 0 },
+      { id: 'img_le_01_b', url: '/img/nx-1553062407-98eeb64c6a62.jpg', altText: 'Atelier briefcase interior compartments', isPrimary: false, order: 1 },
     ],
     variants: [
       { id: 'var_le_01_espresso', productId: 'prod_le_01', name: 'Espresso Brown', sku: 'NX-LE-01-ESP', price: 920, stock: 7, color: 'Espresso' },
@@ -505,7 +505,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_02_a', url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1000&q=80', altText: 'Sovereign Weekender duffle', isPrimary: true, order: 0 },
+      { id: 'img_le_02_a', url: '/img/nx-1553062407-98eeb64c6a62.jpg', altText: 'Sovereign Weekender duffle', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -533,7 +533,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_03_a', url: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=1000&q=80', altText: 'Monad card holder on marble', isPrimary: true, order: 0 },
+      { id: 'img_le_03_a', url: '/img/nx-1627123424574-724758594e93.jpg', altText: 'Monad card holder on marble', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_le_03_cognac', productId: 'prod_le_03', name: 'Cognac', sku: 'NX-LE-03-CGN', price: 185, stock: 25, color: 'Cognac' },
@@ -565,7 +565,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_04_a', url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1000&q=80', altText: 'Cadence roll top backpack', isPrimary: true, order: 0 },
+      { id: 'img_le_04_a', url: '/img/nx-1553062407-98eeb64c6a62.jpg', altText: 'Cadence roll top backpack', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -593,7 +593,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_05_a', url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1000&q=80', altText: 'Scribe Leather Journal open on desk', isPrimary: true, order: 0 },
+      { id: 'img_le_05_a', url: '/img/nx-1544716278-ca5e3f4abd8c.jpg', altText: 'Scribe Leather Journal open on desk', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -621,7 +621,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_leather',
     categoryName: 'Minimalist Leather',
     images: [
-      { id: 'img_le_06_a', url: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=80', altText: 'Valet tray set nested', isPrimary: true, order: 0 },
+      { id: 'img_le_06_a', url: '/img/nx-1548036328-c9fa89d128fa.jpg', altText: 'Valet tray set nested', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -651,7 +651,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_01_a', url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80', altText: 'Strata desk riser on studio desk', isPrimary: true, order: 0 },
+      { id: 'img_ws_01_a', url: '/img/nx-1527443224154-c4a3942d3acf.jpg', altText: 'Strata desk riser on studio desk', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_ws_01_walnut', productId: 'prod_ws_01', name: 'Solid Walnut / Matte Black', sku: 'NX-WS-01-WLT', price: 360, stock: 12, material: 'Walnut' },
@@ -683,7 +683,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_02_a', url: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1000&q=80', altText: 'Kanso linear task lamp illuminated', isPrimary: true, order: 0 },
+      { id: 'img_ws_02_a', url: '/img/nx-1507473885765-e6ed057f782c.jpg', altText: 'Kanso linear task lamp illuminated', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -711,7 +711,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_03_a', url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80', altText: 'Forma wool desk mat', isPrimary: true, order: 0 },
+      { id: 'img_ws_03_a', url: '/img/nx-1527443224154-c4a3942d3acf.jpg', altText: 'Forma wool desk mat', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_ws_03_anthracite', productId: 'prod_ws_03', name: 'Anthracite Dark Grey', sku: 'NX-WS-03-ANT', price: 135, stock: 30, color: 'Anthracite' },
@@ -742,7 +742,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_04_a', url: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=1000&q=80', altText: 'Machina mechanical keyboard on desk', isPrimary: true, order: 0 },
+      { id: 'img_ws_04_a', url: '/img/nx-1587829741301-dc798b83add3.jpg', altText: 'Machina mechanical keyboard on desk', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 5.0,
@@ -770,7 +770,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_05_a', url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80', altText: 'Prism brass cable weights', isPrimary: true, order: 0 },
+      { id: 'img_ws_05_a', url: '/img/nx-1527443224154-c4a3942d3acf.jpg', altText: 'Prism brass cable weights', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -798,7 +798,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_workspace',
     categoryName: 'Architectural Workspace',
     images: [
-      { id: 'img_ws_06_a', url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80', altText: 'Aileron bentwood laptop stand', isPrimary: true, order: 0 },
+      { id: 'img_ws_06_a', url: '/img/nx-1527443224154-c4a3942d3acf.jpg', altText: 'Aileron bentwood laptop stand', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -829,7 +829,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_01_a', url: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=1000&q=80', altText: 'Eclipse sunglasses front view', isPrimary: true, order: 0 },
+      { id: 'img_op_01_a', url: '/img/nx-1511499767150-a48a237f0083.jpg', altText: 'Eclipse sunglasses front view', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_op_01_smoke', productId: 'prod_op_01', name: 'Gunmetal / Smoke Polarized', sku: 'NX-OP-01-SMK', price: 460, stock: 12, color: 'Gunmetal' },
@@ -860,7 +860,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_02_a', url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=1000&q=80', altText: 'Architect acetate frames', isPrimary: true, order: 0 },
+      { id: 'img_op_02_a', url: '/img/nx-1591076482161-42ce6da69f67.jpg', altText: 'Architect acetate frames', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -888,7 +888,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_03_a', url: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=1000&q=80', altText: 'Aero Aviator sunglasses', isPrimary: true, order: 0 },
+      { id: 'img_op_03_a', url: '/img/nx-1511499767150-a48a237f0083.jpg', altText: 'Aero Aviator sunglasses', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -916,7 +916,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_04_a', url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=1000&q=80', altText: 'Spectra photochromic glasses', isPrimary: true, order: 0 },
+      { id: 'img_op_04_a', url: '/img/nx-1591076482161-42ce6da69f67.jpg', altText: 'Spectra photochromic glasses', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -944,7 +944,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_05_a', url: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=80', altText: 'Kallos glasses case closed', isPrimary: true, order: 0 },
+      { id: 'img_op_05_a', url: '/img/nx-1548036328-c9fa89d128fa.jpg', altText: 'Kallos glasses case closed', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -973,7 +973,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_optics',
     categoryName: 'Modern Optics',
     images: [
-      { id: 'img_op_06_a', url: 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?auto=format&fit=crop&w=1000&q=80', altText: 'Mirage rimless sunglasses', isPrimary: true, order: 0 },
+      { id: 'img_op_06_a', url: '/img/nx-1511499767150-a48a237f0083.jpg', altText: 'Mirage rimless sunglasses', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1004,8 +1004,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_01_a', url: 'https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=1000&q=80', altText: 'Vortex technical shell jacket front view', isPrimary: true, order: 0 },
-      { id: 'img_ap_01_b', url: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=1000&q=80', altText: 'Vortex jacket waterproof seam taping detail', isPrimary: false, order: 1 },
+      { id: 'img_ap_01_a', url: '/img/nx-1544441893-675973e31985.jpg', altText: 'Vortex technical shell jacket front view', isPrimary: true, order: 0 },
+      { id: 'img_ap_01_b', url: '/img/nx-1489987707025-afc232f7ea0f.jpg', altText: 'Vortex jacket waterproof seam taping detail', isPrimary: false, order: 1 },
     ],
     variants: [
       { id: 'var_ap_01_m_blk', productId: 'prod_ap_01', name: 'Size M / Obsidian Black', sku: 'NX-AP-01-M-BLK', price: 780, stock: 6, size: 'M', color: 'Obsidian Black' },
@@ -1036,7 +1036,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_02_a', url: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=1000&q=80', altText: 'Merino wool overshirt', isPrimary: true, order: 0 },
+      { id: 'img_ap_02_a', url: '/img/nx-1596755094514-f87e34085b2c.jpg', altText: 'Merino wool overshirt', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_ap_02_charcoal', productId: 'prod_ap_02', name: 'Charcoal Melange / M', sku: 'NX-AP-02-CHR-M', price: 360, stock: 12, size: 'M', color: 'Charcoal' },
@@ -1066,7 +1066,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_03_a', url: 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1000&q=80', altText: 'Technical trouser styling', isPrimary: true, order: 0 },
+      { id: 'img_ap_03_a', url: '/img/nx-1624378439575-d8705ad7ae80.jpg', altText: 'Technical trouser styling', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -1094,7 +1094,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_04_a', url: 'https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=1000&q=80', altText: 'Apsis Aerogel parka exterior', isPrimary: true, order: 0 },
+      { id: 'img_ap_04_a', url: '/img/nx-1544441893-675973e31985.jpg', altText: 'Apsis Aerogel parka exterior', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 5.0,
@@ -1121,7 +1121,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_05_a', url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=1000&q=80', altText: 'Heavyweight pima cotton tees stacked', isPrimary: true, order: 0 },
+      { id: 'img_ap_05_a', url: '/img/nx-1521572267360-ee0c2909d518.jpg', altText: 'Heavyweight pima cotton tees stacked', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1148,7 +1148,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_apparel',
     categoryName: 'Technical Apparel',
     images: [
-      { id: 'img_ap_06_a', url: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&w=1000&q=80', altText: 'Vector technical cap', isPrimary: true, order: 0 },
+      { id: 'img_ap_06_a', url: '/img/nx-1588850561407-ed78c282e89b.jpg', altText: 'Vector technical cap', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -1178,7 +1178,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_01_a', url: 'https://images.unsplash.com/photo-1585336261026-410e30349694?auto=format&fit=crop&w=1000&q=80', altText: 'Apex titanium fountain pen writing', isPrimary: true, order: 0 },
+      { id: 'img_ac_01_a', url: '/img/nx-1585336261026-410e30349694.jpg', altText: 'Apex titanium fountain pen writing', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_ac_01_fine', productId: 'prod_ac_01', name: 'Fine 18k Nib', sku: 'NX-AC-01-F', price: 480, stock: 8 },
@@ -1209,7 +1209,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_02_a', url: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1000&q=80', altText: 'Chronos cufflinks pair', isPrimary: true, order: 0 },
+      { id: 'img_ac_02_a', url: '/img/nx-1617038260897-41a1f14a8ca0.jpg', altText: 'Chronos cufflinks pair', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -1237,7 +1237,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_03_a', url: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=1000&q=80', altText: 'Axiom titanium money clip', isPrimary: true, order: 0 },
+      { id: 'img_ac_03_a', url: '/img/nx-1627123424574-724758594e93.jpg', altText: 'Axiom titanium money clip', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -1265,7 +1265,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_04_a', url: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1000&q=80', altText: 'Triton carabiner clip', isPrimary: true, order: 0 },
+      { id: 'img_ac_04_a', url: '/img/nx-1617038260897-41a1f14a8ca0.jpg', altText: 'Triton carabiner clip', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1293,7 +1293,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_05_a', url: 'https://images.unsplash.com/photo-1526045478516-99145907023c?auto=format&fit=crop&w=1000&q=80', altText: 'Helios brass compass open', isPrimary: true, order: 0 },
+      { id: 'img_ac_05_a', url: '/img/nx-1526045478516-99145907023c.jpg', altText: 'Helios brass compass open', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -1321,7 +1321,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_06_a', url: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1000&q=80', altText: 'Sentry luggage tag on leather duffle', isPrimary: true, order: 0 },
+      { id: 'img_ac_06_a', url: '/img/nx-1617038260897-41a1f14a8ca0.jpg', altText: 'Sentry luggage tag on leather duffle', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.6,
@@ -1352,7 +1352,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_01_a', url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80', altText: 'Monolith bronze bookends holding books', isPrimary: true, order: 0 },
+      { id: 'img_ar_01_a', url: '/img/nx-1579783900882-c0d3dad7b119.jpg', altText: 'Monolith bronze bookends holding books', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1380,7 +1380,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_02_a', url: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1000&q=80', altText: 'Ceramic amphora vessel on pedestal', isPrimary: true, order: 0 },
+      { id: 'img_ar_02_a', url: '/img/nx-1578749556568-bc2c40e68b61.jpg', altText: 'Ceramic amphora vessel on pedestal', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -1408,7 +1408,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_03_a', url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80', altText: 'Torus brass sculpture in motion', isPrimary: true, order: 0 },
+      { id: 'img_ar_03_a', url: '/img/nx-1579783900882-c0d3dad7b119.jpg', altText: 'Torus brass sculpture in motion', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1436,7 +1436,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_04_a', url: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1000&q=80', altText: 'Brutalist concrete incense burner with smoke', isPrimary: true, order: 0 },
+      { id: 'img_ar_04_a', url: '/img/nx-1507473885765-e6ed057f782c.jpg', altText: 'Brutalist concrete incense burner with smoke', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.7,
@@ -1464,7 +1464,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_05_a', url: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1000&q=80', altText: 'Marble hourglass with falling black sand', isPrimary: true, order: 0 },
+      { id: 'img_ar_05_a', url: '/img/nx-1509042239860-f550ce710b93.jpg', altText: 'Marble hourglass with falling black sand', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.8,
@@ -1492,7 +1492,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_art',
     categoryName: 'Objects of Art',
     images: [
-      { id: 'img_ar_06_a', url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80', altText: 'Obsidian faceted polyhedron', isPrimary: true, order: 0 },
+      { id: 'img_ar_06_a', url: '/img/nx-1579783900882-c0d3dad7b119.jpg', altText: 'Obsidian faceted polyhedron', isPrimary: true, order: 0 },
     ],
     variants: [],
     rating: 4.9,
@@ -1569,7 +1569,7 @@ export const INITIAL_ORDERS: Order[] = [
         orderId: 'ord_nx_9041',
         productId: 'prod_tp_01',
         productName: 'Aethelgard Chronograph 41mm',
-        productImage: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80',
+        productImage: '/img/nx-1522335789203-aabd1fc54bc9.jpg',
         sku: 'NX-TP-01-OBS',
         variantName: 'Obsidian Black / Steel Bracelet',
         unitPrice: 1850,
@@ -1581,7 +1581,7 @@ export const INITIAL_ORDERS: Order[] = [
         orderId: 'ord_nx_9041',
         productId: 'prod_le_03',
         productName: 'Monad Slim Card Holder',
-        productImage: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=1000&q=80',
+        productImage: '/img/nx-1627123424574-724758594e93.jpg',
         sku: 'NX-LE-03-CGN',
         variantName: 'Cognac',
         unitPrice: 185,
@@ -1627,7 +1627,7 @@ export const INITIAL_ORDERS: Order[] = [
         orderId: 'ord_nx_9042',
         productId: 'prod_au_01',
         productName: 'Aura Reference Planar Headphones',
-        productImage: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=1000&q=80',
+        productImage: '/img/nx-1546435770-a3e426bf472b.jpg',
         sku: 'NX-AU-01-WLT',
         variantName: 'Walnut / Black Anodized',
         unitPrice: 1450,
@@ -1672,7 +1672,7 @@ export const INITIAL_ORDERS: Order[] = [
         orderId: 'ord_nx_9043',
         productId: 'prod_ar_01',
         productName: 'Monolith Bronze Bookend Pair',
-        productImage: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80',
+        productImage: '/img/nx-1579783900882-c0d3dad7b119.jpg',
         sku: 'NX-AR-01',
         unitPrice: 540,
         quantity: 1,
@@ -1683,7 +1683,7 @@ export const INITIAL_ORDERS: Order[] = [
         orderId: 'ord_nx_9043',
         productId: 'prod_ws_01',
         productName: 'Strata Walnut Desk Riser',
-        productImage: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=80',
+        productImage: '/img/nx-1527443224154-c4a3942d3acf.jpg',
         sku: 'NX-WS-01-WLT',
         variantName: 'Solid Walnut / Matte Black',
         unitPrice: 360,

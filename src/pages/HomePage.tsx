@@ -5,6 +5,7 @@ import { fetchCategories, fetchFeaturedProducts, fetchProducts } from '../lib/ap
 import { Category, Product } from '../types';
 import { ProductGrid } from '../components/store/ProductGrid';
 import { HeroSection } from '../components/store/HeroSection';
+import { Reveal } from '../components/ui/Reveal';
 import {
   ArrowRight,
   ShieldCheck,
@@ -63,6 +64,29 @@ export const HomePage: React.FC = () => {
       {/* 1. High-Impact Luxury Imagery Slider Hero Section */}
       <HeroSection />
 
+      {/* 1b. Marquee trust strip — world-class editorial cadence */}
+      <div className="border-y border-line bg-raised py-5 overflow-hidden" aria-hidden="true">
+        <div className="flex w-max animate-marquee gap-12 px-6 items-center">
+          {[...Array(2)].flatMap((_, round) =>
+            [
+              language === 'ar' ? 'أصالة معتمدة 100%' : 'CERTIFIED AUTHENTICITY',
+              language === 'ar' ? 'شحن أبيض مؤمن' : 'INSURED WHITE-GLOVE SHIPPING',
+              language === 'ar' ? 'سويسرا — صناعة يدوية' : 'HAND-FINISHED IN SWITZERLAND',
+              language === 'ar' ? 'ضمان الدولي 5 سنوات' : '5-YEAR INTERNATIONAL WARRANTY',
+              language === 'ar' ? 'إصدارات محدودة' : 'LIMITED ANNUAL COMMISSIONS',
+              language === 'ar' ? 'دفع آمن' : 'SECURE CHECKOUT',
+            ].map((item, i) => (
+              <span key={`${round}-${i}`} className="flex items-center gap-12 whitespace-nowrap">
+                <span className="font-serif-luxury text-sm tracking-[0.22em] text-fg-muted">
+                  {item}
+                </span>
+                <span className="w-1.5 h-1.5 rotate-45 bg-gold/70" />
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+
       {loadState === 'loading' && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-center py-24">
           <Loader2 className="w-10 h-10 text-gold animate-spin" />
@@ -97,7 +121,7 @@ export const HomePage: React.FC = () => {
         <>
           {/* 2. Featured Categories (8 Ateliers) */}
           <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+            <Reveal className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
               <div>
                 <span className="text-xs uppercase tracking-[0.2em] text-gold font-semibold">
                   {t.home.curatedTitle}
@@ -113,7 +137,7 @@ export const HomePage: React.FC = () => {
                 <span>{t.home.viewAllAteliers}</span>
                 <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
               </button>
-            </div>
+            </Reveal>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
               {localizedCategories.map((cat) => (
@@ -132,13 +156,13 @@ export const HomePage: React.FC = () => {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0F1113] via-[#0F1113]/40 to-transparent" />
                   <div className="absolute bottom-0 inset-x-0 p-5 space-y-1">
-                    <span className="text-[11px] font-mono text-gold uppercase tracking-wider">
+                    <span className="text-[11px] font-mono text-gold-soft uppercase tracking-wider">
                       {cat.itemCount} {language === 'ar' ? 'قطع معتمدة' : 'Artifacts'}
                     </span>
-                    <h3 className="font-serif-luxury text-lg font-bold text-fg group-hover:text-gold transition-colors">
+                    <h3 className="font-serif-luxury text-lg font-bold text-on-image group-hover:text-gold-soft transition-colors">
                       {cat.name}
                     </h3>
-                    <p className="text-xs text-fg-muted line-clamp-1 font-light">
+                    <p className="text-xs text-on-image-muted line-clamp-1 font-light">
                       {cat.description}
                     </p>
                   </div>
@@ -149,7 +173,7 @@ export const HomePage: React.FC = () => {
 
           {/* 3. Trending Curations */}
           <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+            <Reveal className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
               <div>
                 <span className="text-xs uppercase tracking-[0.2em] text-gold font-semibold">
                   {t.home.trendingTitle}
@@ -168,7 +192,7 @@ export const HomePage: React.FC = () => {
                 <span>{t.home.exploreFullCatalog}</span>
                 <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
               </button>
-            </div>
+            </Reveal>
 
             <ProductGrid products={trendingProducts} />
           </section>
@@ -235,7 +259,7 @@ export const HomePage: React.FC = () => {
 
               <div className="relative aspect-video lg:aspect-square rounded-xl overflow-hidden border border-line">
                 <img
-                  src="https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1000&q=80"
+                  src="/img/nx-1522335789203-aabd1fc54bc9.jpg"
                   alt="Horology and Leather curation"
                   className="w-full h-full object-cover"
                 />
@@ -270,8 +294,8 @@ export const HomePage: React.FC = () => {
           </section>
 
           {/* 6. Why NEXORA Architectural Manifesto */}
-          <section className="bg-raised border-y border-line py-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-12">
+          <section className="relative bg-raised border-y border-line py-20 overflow-hidden">
+            <Reveal className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-12">
               <div className="max-w-2xl mx-auto space-y-3">
                 <span className="text-xs uppercase tracking-[0.2em] text-gold font-semibold">
                   {language === 'ar' ? 'دستور نكسورا المعماري' : 'The NEXORA Constitution'}
@@ -287,7 +311,7 @@ export const HomePage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left rtl:text-right">
-                <div className="p-8 rounded-lg bg-surface border border-line space-y-4">
+                <Reveal delay={60} className="p-8 rounded-lg bg-surface border border-line space-y-4">
                   <div className="w-12 h-12 rounded-md bg-raised border border-line flex items-center justify-center text-gold">
                     <Clock className="w-6 h-6" />
                   </div>
@@ -299,9 +323,9 @@ export const HomePage: React.FC = () => {
                       ? 'حركات سويسرية كولوم-ويل معدلة بخمس وضعيات مع عجلات توازن غلوسيدور المقاومة للمجالات المغناطيسية.'
                       : 'Swiss-manufactured column-wheel calibers adjusted in five positions with Glucydur balance wheels.'}
                   </p>
-                </div>
+                </Reveal>
 
-                <div className="p-8 rounded-lg bg-surface border border-line space-y-4">
+                <Reveal delay={120} className="p-8 rounded-lg bg-surface border border-line space-y-4">
                   <div className="w-12 h-12 rounded-md bg-raised border border-line flex items-center justify-center text-gold">
                     <Award className="w-6 h-6" />
                   </div>
@@ -313,9 +337,9 @@ export const HomePage: React.FC = () => {
                       ? 'أغشية مغناطيسية متناهية الرقة تتفاعل بديناميكية فورية بدون أي تشويش لتوفير أدق تفاصيل النغمات.'
                       : 'Ultra-thin magnetic diaphragms that react with instantaneous micro-dynamics and zero distortion.'}
                   </p>
-                </div>
+                </Reveal>
 
-                <div className="p-8 rounded-lg bg-surface border border-line space-y-4">
+                <Reveal delay={180} className="p-8 rounded-lg bg-surface border border-line space-y-4">
                   <div className="w-12 h-12 rounded-md bg-raised border border-line flex items-center justify-center text-gold">
                     <ShieldCheck className="w-6 h-6" />
                   </div>
@@ -327,9 +351,9 @@ export const HomePage: React.FC = () => {
                       ? 'دباغة نباتية بطيئة بمستخلصات لحاء الكستناء لأكثر من 60 يوماً تمنح الجلد ملمساً زبدياً غنياً يزداد بهاءً مع الزمن.'
                       : 'Slow-tanned in chestnut and mimosa extracts for over 60 days, yielding butter-soft resilience.'}
                   </p>
-                </div>
+                </Reveal>
               </div>
-            </div>
+            </Reveal>
           </section>
         </>
       )}

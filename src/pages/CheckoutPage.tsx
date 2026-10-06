@@ -27,8 +27,8 @@ export const CheckoutPage: React.FC = () => {
   const { t, language } = useTranslation();
 
   // Address inputs
-  const [fullName, setFullName] = useState(currentUser.name || 'Alexander Hayes');
-  const [email, setEmail] = useState(currentUser.email || 'customer@nexora.com');
+  const [fullName, setFullName] = useState(currentUser?.name || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
   const [street, setStreet] = useState('742 Evergreen Terrace, Suite 400');
   const [apartment, setApartment] = useState('');
   const [city, setCity] = useState('San Francisco');
@@ -443,7 +443,7 @@ export const CheckoutPage: React.FC = () => {
             </div>
 
             {errorMessage && (
-              <div className="p-3 rounded bg-rose-950/40 border border-danger/50 text-xs text-rose-300 flex items-start gap-2">
+              <div className="p-3 rounded bg-danger/10 border border-danger/50 text-xs text-danger flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>

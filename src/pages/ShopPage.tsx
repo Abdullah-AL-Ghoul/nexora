@@ -206,7 +206,7 @@ export const ShopPage: React.FC = () => {
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-2.5 text-fg-faint hover:text-white"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rtl:right-auto rtl:left-2.5 text-fg-faint hover:text-fg"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

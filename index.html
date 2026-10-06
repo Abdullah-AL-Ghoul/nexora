@@ -10,11 +10,12 @@
     <meta property="og:title" content="NEXORA — Luxury Atelier & Artisanal Objects" />
     <meta property="og:description" content="Curated masterworks: Swiss horology, acoustic engineering, full-grain leather, and architectural workspace essentials." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=80" />
+    <meta property="og:image" content="/brand/og-cover.png" />
     <meta property="og:locale" content="ar_AR" />
     <meta property="og:locale:alternate" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230F1113'/%3E%3Ccircle cx='50' cy='50' r='14' fill='%23C9A961'/%3E%3C/svg%3E" />
+    <link rel="icon" type="image/svg+xml" href="/brand/mark.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png" />
     <link rel="canonical" href="https://nexora.example.com/" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +23,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Apply the persisted theme before React hydrates to avoid a flash of the wrong theme.
+      try {
+        var stored = JSON.parse(localStorage.getItem('nexora_client_store') || '{}');
+        if (stored && stored.state && stored.state.theme === 'light') {
+          document.documentElement.dataset.theme = 'light';
+        }
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
