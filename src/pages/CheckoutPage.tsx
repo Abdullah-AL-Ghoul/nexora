@@ -164,8 +164,9 @@ export const CheckoutPage: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div className="sm:col-span-2">
-                <label className="text-fg-muted block mb-1">{t.checkout.fullName}</label>
+                <label htmlFor="co-field-1" className="text-fg-muted block mb-1">{t.checkout.fullName}</label>
                 <input
+                  id="co-field-1"
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
@@ -175,8 +176,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-fg-muted block mb-1">{t.checkout.email}</label>
+                <label htmlFor="co-field-2" className="text-fg-muted block mb-1">{t.checkout.email}</label>
                 <input
+                  id="co-field-2"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -186,8 +188,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-fg-muted block mb-1">{t.checkout.street}</label>
+                <label htmlFor="co-field-3" className="text-fg-muted block mb-1">{t.checkout.street}</label>
                 <input
+                  id="co-field-3"
                   type="text"
                   value={street}
                   onChange={(e) => setStreet(e.target.value)}
@@ -197,8 +200,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-fg-muted block mb-1">{language === 'ar' ? 'رقم الشقة / الجناح (اختياري)' : 'Apartment, Suite (Optional)'}</label>
+                <label htmlFor="co-field-4" className="text-fg-muted block mb-1">{language === 'ar' ? 'رقم الشقة / الجناح (اختياري)' : 'Apartment, Suite (Optional)'}</label>
                 <input
+                  id="co-field-4"
                   type="text"
                   value={apartment}
                   onChange={(e) => setApartment(e.target.value)}
@@ -207,8 +211,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-fg-muted block mb-1">{t.checkout.city}</label>
+                <label htmlFor="co-field-5" className="text-fg-muted block mb-1">{t.checkout.city}</label>
                 <input
+                  id="co-field-5"
                   type="text"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
@@ -218,8 +223,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-fg-muted block mb-1">{t.checkout.state}</label>
+                <label htmlFor="co-field-6" className="text-fg-muted block mb-1">{t.checkout.state}</label>
                 <input
+                  id="co-field-6"
                   type="text"
                   value={state}
                   onChange={(e) => setState(e.target.value)}
@@ -229,8 +235,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-fg-muted block mb-1">{t.checkout.postalCode}</label>
+                <label htmlFor="co-field-7" className="text-fg-muted block mb-1">{t.checkout.postalCode}</label>
                 <input
+                  id="co-field-7"
                   type="text"
                   value={postalCode}
                   onChange={(e) => setPostalCode(e.target.value)}
@@ -250,15 +257,22 @@ export const CheckoutPage: React.FC = () => {
               <span>{t.checkout.shippingMethod}</span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3" role="radiogroup" aria-label={t.checkout.shippingMethod}>
               <label
-                onClick={() => setShippingMethod('standard')}
                 className={`flex items-center justify-between p-4 rounded-lg border text-xs cursor-pointer transition-colors ${
                   shippingMethod === 'standard'
                     ? 'border-gold bg-gold/10'
                     : 'border-line bg-raised'
                 }`}
               >
+                <input
+                  type="radio"
+                  name="shipping-method"
+                  value="standard"
+                  checked={shippingMethod === 'standard'}
+                  onChange={() => setShippingMethod('standard')}
+                  className="sr-only"
+                />
                 <div className="flex items-center gap-3">
                   <Truck className="w-4 h-4 text-gold" />
                   <div>
@@ -274,13 +288,20 @@ export const CheckoutPage: React.FC = () => {
               </label>
 
               <label
-                onClick={() => setShippingMethod('priority')}
                 className={`flex items-center justify-between p-4 rounded-lg border text-xs cursor-pointer transition-colors ${
                   shippingMethod === 'priority'
                     ? 'border-gold bg-gold/10'
                     : 'border-line bg-raised'
                 }`}
               >
+                <input
+                  type="radio"
+                  name="shipping-method"
+                  value="priority"
+                  checked={shippingMethod === 'priority'}
+                  onChange={() => setShippingMethod('priority')}
+                  className="sr-only"
+                />
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="w-4 h-4 text-gold" />
                   <div>
@@ -317,10 +338,11 @@ export const CheckoutPage: React.FC = () => {
 
             <div className="space-y-4 text-xs">
               <div>
-                <label className="text-fg-muted block mb-1">{t.checkout.cardNumber}</label>
+                <label htmlFor="co-field-0" className="text-fg-muted block mb-1">{t.checkout.cardNumber}</label>
                 <div className="relative">
                   <CreditCard className="w-4 h-4 text-gold absolute left-3 top-1/2 -translate-y-1/2 rtl:left-auto rtl:right-3" />
                   <input
+                    id="co-field-0"
                     type="text"
                     value={cardNumber}
                     onChange={(e) => setCardNumber(e.target.value)}
@@ -332,8 +354,9 @@ export const CheckoutPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-fg-muted block mb-1">{t.checkout.cardExpiry}</label>
+                  <label htmlFor="co-field-8" className="text-fg-muted block mb-1">{t.checkout.cardExpiry}</label>
                   <input
+                    id="co-field-8"
                     type="text"
                     value={cardExp}
                     onChange={(e) => setCardExp(e.target.value)}
@@ -342,8 +365,9 @@ export const CheckoutPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-fg-muted block mb-1">{t.checkout.cardCvc}</label>
+                  <label htmlFor="co-field-9" className="text-fg-muted block mb-1">{t.checkout.cardCvc}</label>
                   <input
+                    id="co-field-9"
                     type="text"
                     value={cardCvc}
                     onChange={(e) => setCardCvc(e.target.value)}
