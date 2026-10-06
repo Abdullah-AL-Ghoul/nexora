@@ -9,7 +9,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-display: var(--font-fraunces), Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -35,8 +35,6 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -46,44 +44,98 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Unified elevation family — replaces ad-hoc glow values. */
+  --shadow-soft: var(--shadow-soft);
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+  --shadow-glow: var(--shadow-glow);
 }
 
-/* NEXORA brand tokens — Dark / Premium / Minimal / Precision (M13).
-   Dark-only design: :root IS the dark theme (no .dark override needed). */
+/*
+ * NEXORA ATELIER — light-first editorial luxury.
+ * Warm porcelain surfaces, ink typography, bronze-gold accent.
+ * Dark mode: warm near-black with the house gold (#c9a961).
+ * Both modes share one hue family; only luminance flips.
+ */
 :root {
-  color-scheme: dark;
-  --background: #0f1113;
-  --foreground: #f5f5f5;
-  --card: #171a1f;
-  --card-foreground: #f5f5f5;
-  --popover: #171a1f;
-  --popover-foreground: #f5f5f5;
+  --background: #f6f4ef;
+  --foreground: #1a1712;
+  --card: #fffefb;
+  --card-foreground: #1a1712;
+  --popover: #fffefb;
+  --popover-foreground: #1a1712;
+  --primary: #8a661c;
+  --primary-foreground: #fdf9ee;
+  --secondary: #ece7dc;
+  --secondary-foreground: #43392a;
+  --muted: #edeae2;
+  --muted-foreground: #6e6558;
+  --accent: #efe8d8;
+  --accent-foreground: #1a1712;
+  --destructive: oklch(0.52 0.2 27);
+  --border: rgb(26 23 18 / 10%);
+  --input: rgb(26 23 18 / 14%);
+  --ring: #8a661c;
+  --chart-1: #8a661c;
+  --chart-2: #b3914a;
+  --chart-3: #6f6552;
+  --chart-4: #a89f8d;
+  --chart-5: #d9d2c2;
+  --radius: 0.625rem;
+  --sidebar: #f1eee6;
+  --sidebar-foreground: #1a1712;
+  --sidebar-primary: #8a661c;
+  --sidebar-primary-foreground: #fdf9ee;
+  --sidebar-accent: #e7e1d3;
+  --sidebar-accent-foreground: #1a1712;
+  --sidebar-border: rgb(26 23 18 / 8%);
+  --sidebar-ring: #8a661c;
+
+  --shadow-soft: 0 1px 2px rgb(26 23 18 / 0.05), 0 4px 14px rgb(26 23 18 / 0.05);
+  --shadow-card: 0 1px 3px rgb(26 23 18 / 0.06), 0 10px 30px rgb(26 23 18 / 0.07);
+  --shadow-lift: 0 4px 14px rgb(26 23 18 / 0.1), 0 24px 56px rgb(26 23 18 / 0.12);
+  --shadow-glow: 0 0 0 1px rgb(138 102 28 / 0.18), 0 10px 44px rgb(176 138 62 / 0.3);
+  color-scheme: light;
+}
+
+.dark {
+  --background: #0e0d0b;
+  --foreground: #f4f1ea;
+  --card: #171511;
+  --card-foreground: #f4f1ea;
+  --popover: #171511;
+  --popover-foreground: #f4f1ea;
   --primary: #c9a961;
-  --primary-foreground: #0f1113;
-  --secondary: #1e2228;
+  --primary-foreground: #17130a;
+  --secondary: #211e17;
   --secondary-foreground: #e7d3a0;
-  --muted: #1a1e23;
-  --muted-foreground: #9aa0a6;
-  --accent: #22262c;
-  --accent-foreground: #f5f5f5;
+  --muted: #1b1813;
+  --muted-foreground: #9d9487;
+  --accent: #262218;
+  --accent-foreground: #f4f1ea;
   --destructive: oklch(0.65 0.22 25);
-  --border: rgb(245 245 245 / 10%);
-  --input: rgb(245 245 245 / 15%);
+  --border: rgb(244 241 234 / 9%);
+  --input: rgb(244 241 234 / 13%);
   --ring: #c9a961;
   --chart-1: #c9a961;
   --chart-2: #e7d3a0;
-  --chart-3: #7d8590;
-  --chart-4: #4c5157;
-  --chart-5: #2a2f35;
-  --radius: 0.625rem;
-  --sidebar: #171a1f;
-  --sidebar-foreground: #f5f5f5;
+  --chart-3: #857c6b;
+  --chart-4: #55503f;
+  --chart-5: #312d22;
+  --sidebar: #171511;
+  --sidebar-foreground: #f4f1ea;
   --sidebar-primary: #c9a961;
-  --sidebar-primary-foreground: #0f1113;
-  --sidebar-accent: #22262c;
-  --sidebar-accent-foreground: #f5f5f5;
-  --sidebar-border: rgb(245 245 245 / 10%);
+  --sidebar-primary-foreground: #17130a;
+  --sidebar-accent: #262218;
+  --sidebar-accent-foreground: #f4f1ea;
+  --sidebar-border: rgb(244 241 234 / 8%);
   --sidebar-ring: #c9a961;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.35);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5), 0 10px 30px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 4px 14px rgb(0 0 0 / 0.5), 0 24px 56px rgb(0 0 0 / 0.45);
+  --shadow-glow: 0 0 0 1px rgb(201 169 97 / 0.22), 0 10px 44px rgb(201 169 97 / 0.22);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -95,6 +147,62 @@
   }
   html {
     @apply font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    font-optical-sizing: auto;
+  }
+}
+
+@layer utilities {
+  /* Gold text gradient for display accents (hero keyword, section ticks). */
+  .text-gold-gradient {
+    background: linear-gradient(120deg, var(--primary), var(--chart-2) 60%, var(--primary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Ambient hero glows — one source of truth for the radial washes. */
+  .hero-glow::before,
+  .hero-glow::after {
+    content: "";
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(120px);
+    pointer-events: none;
+  }
+  .hero-glow::before {
+    width: 480px;
+    height: 480px;
+    top: -160px;
+    left: -120px;
+    background: radial-gradient(circle, color-mix(in oklab, var(--primary) 22%, transparent), transparent 70%);
+  }
+  .hero-glow::after {
+    width: 420px;
+    height: 420px
+    ;
+    bottom: -180px;
+    right: -100px;
+    background: radial-gradient(circle, color-mix(in oklab, var(--chart-2) 16%, transparent), transparent 70%);
+  }
+
+  /* Reveal-on-scroll primitives (driven by lib/motion/reveal.tsx). */
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -108,5 +216,8 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
 }
-
