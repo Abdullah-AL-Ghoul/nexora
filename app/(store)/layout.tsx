@@ -5,11 +5,17 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
 import { TopProgressBar } from "@/components/layout/top-progress-bar";
 import { getSession } from "@/lib/auth/guards";
+import { getWishlistCount } from "@/lib/queries/wishlist";
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
+
+  const [wishlistCount] = session
+    ? await Promise.all([getWishlistCount(session.user.id)])
+    : [0];
+
   const user: HeaderUser = session
-    ? { name: session.user.name, email: session.user.email }
+    ? { name: session.user.name, email: session.user.email, wishlistCount }
     : null;
 
   return (

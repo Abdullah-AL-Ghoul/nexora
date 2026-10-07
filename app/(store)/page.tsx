@@ -9,6 +9,8 @@ import { ProductGrid } from "@/components/product/product-grid";
 import { ProductQuickAdd } from "@/components/product/product-quick-add";
 import { getHomeSections, type CategoryCard } from "@/lib/queries/catalog";
 import { formatPrice } from "@/lib/format";
+import { CountUp } from "@/lib/motion/count-up";
+import { Reveal } from "@/lib/motion/reveal";
 
 const VALUE_PROPS = [
   {
@@ -44,16 +46,7 @@ export default async function HomePage() {
   return (
     <>
       {/* Hero Section with Ambient Glow & Floating Product Showcase */}
-      <section className="relative overflow-hidden border-b border-border bg-background">
-        {/* Ambient radial glows */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-40 right-1/4 h-[550px] w-[550px] rounded-full bg-primary/10 blur-[130px]"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-20 left-10 h-[400px] w-[400px] rounded-full bg-primary/5 blur-[100px]"
-        />
+      <section className="hero-glow relative overflow-hidden border-b border-border bg-background">
 
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:py-24 lg:py-28">
           <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-8">
@@ -66,9 +59,7 @@ export default async function HomePage() {
 
               <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl text-foreground leading-[1.08]">
                 Precision-engineered{" "}
-                <span className="bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent">
-                  essentials
-                </span>{" "}
+                <span className="text-gold-gradient">essentials</span>{" "}
                 for modern living.
               </h1>
 
@@ -107,7 +98,7 @@ export default async function HomePage() {
             {/* Right Showcase Column (Floating Spotlight Card) */}
             {heroProduct && (
               <div className="relative mx-auto w-full max-w-md lg:col-span-5 lg:max-w-none">
-                <div className="group relative overflow-hidden rounded-2xl border border-primary/30 bg-card/90 p-5 shadow-[0_0_50px_-12px_rgba(201,169,97,0.22)] backdrop-blur transition-all duration-300 hover:border-primary/60">
+                <div className="group relative overflow-hidden rounded-2xl border border-primary/30 bg-card/90 p-5 shadow-glow backdrop-blur transition-all duration-300 hover:border-primary/60">
                   <div className="flex items-center justify-between pb-3">
                     <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
                       <Sparkles className="size-3" />
@@ -166,25 +157,25 @@ export default async function HomePage() {
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
               <dt className="text-xs text-muted-foreground">Curated Catalog</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                {stats.productCount}+
+                <CountUp value={stats.productCount} format={(n) => `${Math.round(n)}+`} />
               </dd>
             </div>
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
               <dt className="text-xs text-muted-foreground">Specialized Categories</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                {stats.categoryCount}
+                <CountUp value={stats.categoryCount} />
               </dd>
             </div>
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
               <dt className="text-xs text-muted-foreground">Client Satisfaction</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-primary">
-                {stats.averageRating.toFixed(1)} ★
+                <CountUp value={stats.averageRating} format={(n) => `${n.toFixed(1)} ★`} />
               </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Verified Reviews</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                {stats.reviewCount}+
+                <CountUp value={stats.reviewCount} format={(n) => `${Math.round(n)}+`} />
               </dd>
             </div>
           </dl>
@@ -214,7 +205,7 @@ export default async function HomePage() {
       {/* Main Storefront Content Sections */}
       <div className="mx-auto flex max-w-7xl flex-col gap-20 px-4 py-16">
         {/* Curated Categories Bento Grid */}
-        <section aria-label="Shop by category">
+        <Reveal as="section" aria-label="Shop by category">
           <SectionHeading
             title="Curated Categories"
             subtitle="Explore precision instruments and daily essentials tailored to high performance"
@@ -223,13 +214,15 @@ export default async function HomePage() {
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredCategories.map((category, index) => (
-              <CategoryTile key={category.id} category={category} isHero={index === 0} />
+              <Reveal key={category.id} delay={index * 80}>
+                <CategoryTile category={category} isHero={index === 0} />
+              </Reveal>
             ))}
           </div>
-        </section>
+        </Reveal>
 
         {/* Trending Essentials */}
-        <section aria-label="Trending products">
+        <Reveal as="section" aria-label="Trending products">
           <SectionHeading
             title="Trending Now"
             subtitle="The most coveted pieces in our active catalog"
@@ -237,11 +230,15 @@ export default async function HomePage() {
             actionLabel="Explore all trending"
           />
           <ProductGrid products={trending} />
-        </section>
+        </Reveal>
 
-        {/* Special Offers */}
+        {/* Special Offers — accent-framed to break the rail monotony */}
         {offers.length > 0 && (
-          <section aria-label="Special offers">
+          <Reveal
+            as="section"
+            aria-label="Special offers"
+            className="rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.06] via-transparent to-primary/[0.04] p-4 sm:p-6"
+          >
             <SectionHeading
               title="Exclusive Offers"
               subtitle="Limited-time pricing on select seasonal editions"
@@ -249,22 +246,25 @@ export default async function HomePage() {
               actionLabel="View all offers"
             />
             <ProductGrid products={offers} />
-          </section>
+          </Reveal>
         )}
 
-        {/* Best Sellers */}
-        <section aria-label="Best sellers">
+        {/* Best Sellers — ranked treatment */}
+        <Reveal as="section" aria-label="Best sellers">
           <SectionHeading
             title="Hall of Fame · Best Sellers"
             subtitle="Proven customer favorites with the highest verified satisfaction"
             href="/shop?sort=popular"
             actionLabel="Shop best sellers"
           />
-          <ProductGrid products={bestSellers.slice(0, 4)} />
-        </section>
+          <ProductGrid products={bestSellers.slice(0, 4)} rankOffset={1} />
+        </Reveal>
 
         {/* Brand Philosophy / Editorial Quality Commitment */}
-        <section className="relative overflow-hidden rounded-2xl border border-primary/40 bg-card px-8 py-14 text-center sm:py-20 shadow-[0_0_40px_-10px_rgba(201,169,97,0.12)]">
+        <Reveal
+          as="section"
+          className="relative overflow-hidden rounded-2xl border border-primary/40 bg-card px-8 py-14 text-center sm:py-20 shadow-card"
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(201,169,97,0.15),_transparent_70%)]"
@@ -289,7 +289,7 @@ export default async function HomePage() {
               </Button>
             </div>
           </div>
-        </section>
+        </Reveal>
       </div>
     </>
   );
@@ -300,7 +300,7 @@ function CategoryTile({ category, isHero = false }: { category: CategoryCard; is
     <Link
       href={`/category/${category.slug}`}
       prefetch={true}
-      className={`group relative overflow-hidden rounded-xl border border-border bg-muted transition-all duration-300 hover:border-primary/60 hover:shadow-[0_0_20px_-5px_rgba(201,169,97,0.18)] ${
+      className={`group relative overflow-hidden rounded-xl border border-border bg-muted transition-all duration-300 hover:border-primary/60 hover:shadow-glow ${
         isHero ? "aspect-[4/3] sm:aspect-auto sm:row-span-1" : "aspect-[4/3]"
       }`}
     >

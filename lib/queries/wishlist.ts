@@ -27,3 +27,12 @@ export async function getWishlistItems(userId: string): Promise<ProductCardData[
     .map((item) => item.product)
     .filter((product) => product.status === "ACTIVE") ?? [];
 }
+
+/** Header badge count — cheap, single indexed query. */
+export async function getWishlistCount(userId: string): Promise<number> {
+  const wishlist = await prisma.wishlist.findUnique({
+    where: { userId },
+    select: { _count: { select: { items: true } } },
+  });
+  return wishlist?._count.items ?? 0;
+}

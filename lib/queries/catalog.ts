@@ -14,10 +14,11 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 export const cardInclude = {
   images: {
     orderBy: { position: "asc" },
-    take: 1,
+    take: 2,
     select: { url: true, alt: true },
   },
   category: { select: { name: true, slug: true } },
+  // include keeps every scalar — createdAt rides along for the New badge.
 } satisfies Prisma.ProductInclude;
 
 export type ProductCardData = Prisma.ProductGetPayload<{ include: typeof cardInclude }>;
@@ -288,7 +289,7 @@ async function getHomeSectionsUncached(): Promise<HomeSections> {
     },
     orderBy: [{ ratingCount: "desc" }, { createdAt: "desc" }],
     take: 24,
-    include: { ...cardInclude },
+    include: cardInclude,
   });
   const offerProducts = discounted
     .sort((a, b) => (b.compareAtPrice! - b.price) - (a.compareAtPrice! - a.price))

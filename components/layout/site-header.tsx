@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { cn } from "cn";
 import { CartButton } from "@/components/cart/cart-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,7 +29,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { SearchDialog } from "@/components/search/search-dialog";
 
-export type HeaderUser = { name: string; email: string } | null;
+export type HeaderUser = { name: string; email: string; wishlistCount?: number } | null;
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
@@ -173,22 +174,31 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
           </div>
 
           <nav className="hidden items-center gap-6 lg:flex" aria-label="Primary">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={true}
-                className={cn(
-                  "relative py-1 text-sm font-medium transition-colors",
-                  isActivePath(pathname, item.href)
-                    ? "text-primary font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const active = isActivePath(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  prefetch={true}
+                  className={cn(
+                    "group relative py-1.5 text-sm font-medium transition-colors",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {item.label}
+                  {/* Gold indicator bar — slides in on hover, stays on active. */}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute inset-x-0 -bottom-px h-0.5 origin-left rounded-full bg-primary transition-transform duration-300",
+                      active ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                    )}
+                  />
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="flex items-center gap-2">
@@ -217,12 +227,19 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
             </Button>
 
             <Button asChild variant="ghost" size="icon" aria-label="Wishlist">
-              <Link href="/wishlist">
+              <Link href="/wishlist" className="relative">
                 <Heart className="size-5" aria-hidden="true" />
+                {user?.wishlistCount ? (
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {user.wishlistCount > 9 ? "9+" : user.wishlistCount}
+                  </span>
+                ) : null}
               </Link>
             </Button>
 
             <CartButton />
+
+            <ThemeToggle />
 
             <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 
