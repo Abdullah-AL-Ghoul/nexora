@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { Lock } from "lucide-react";
+
+import { NewsletterForm } from "@/components/home/newsletter-form";
 
 const FOOTER_COLUMNS = [
   {
@@ -8,6 +11,7 @@ const FOOTER_COLUMNS = [
       { href: "/categories", label: "Categories" },
       { href: "/search", label: "Search" },
       { href: "/shop?sort=rating", label: "Top rated" },
+      { href: "/shop?sort=price-asc", label: "Offers" },
     ],
   },
   {
@@ -16,23 +20,60 @@ const FOOTER_COLUMNS = [
       { href: "/login", label: "Sign in" },
       { href: "/register", label: "Create account" },
       { href: "/account", label: "My account" },
-      { href: "/forgot-password", label: "Reset password" },
+      { href: "/account/orders", label: "Orders" },
+      { href: "/wishlist", label: "Wishlist" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { href: "/privacy", label: "Privacy policy" },
+      { href: "/terms", label: "Terms of service" },
+      { href: "/shipping", label: "Shipping & returns" },
+      { href: "mailto:support@nexora.demo", label: "support@nexora.demo" },
     ],
   },
 ] as const;
 
+const PAYMENT_METHODS = ["Visa", "Mastercard", "Amex", "Apple Pay", "Stripe"] as const;
+
 export function SiteFooter() {
   return (
     <footer className="border-t border-border bg-card">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Newsletter band */}
+      <div className="border-b border-border">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-4 px-4 py-10 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="font-display text-xl font-semibold tracking-tight text-foreground">
+              Join the NEXORA list
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              First access to seasonal drops and member pricing. One email per season.
+            </p>
+          </div>
+          <NewsletterForm compact />
+        </div>
+      </div>
+
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:grid-cols-2 lg:grid-cols-5">
         <div className="lg:col-span-2">
-          <p className="text-lg font-semibold tracking-[0.28em]">
+          <p className="text-lg font-semibold tracking-[0.28em] text-foreground">
             NEX<span className="text-primary">O</span>RA
           </p>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            A modern commerce platform built with Next.js, TypeScript, and PostgreSQL.
-            Premium by design, precise by engineering.
+            Precision-engineered essentials across eight disciplines — curated for durability,
+            designed for the long run, and backed by a 2-year warranty on every item.
           </p>
+          <div className="mt-5 flex flex-wrap gap-1.5" aria-label="Accepted payment methods">
+            {PAYMENT_METHODS.map((method) => (
+              <span
+                key={method}
+                className="rounded-md border border-border bg-background px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                {method}
+              </span>
+            ))}
+          </div>
         </div>
 
         {FOOTER_COLUMNS.map((column) => (
@@ -59,7 +100,10 @@ export function SiteFooter() {
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row">
           <p>© 2026 NEXORA. All rights reserved.</p>
-          <p>Secure payments powered by Stripe (test mode).</p>
+          <p className="inline-flex items-center gap-1.5">
+            <Lock className="size-3" aria-hidden="true" />
+            Encrypted checkout · payments powered by Stripe (test mode)
+          </p>
         </div>
       </div>
     </footer>

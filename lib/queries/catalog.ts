@@ -402,3 +402,54 @@ async function getRelatedProductsUncached(
 
   return [...sameCategory, ...filler].map(mapCardImages);
 }
+
+export type FeaturedReview = {
+  id: string;
+  rating: number;
+  comment: string;
+  authorName: string;
+  productSlug: string;
+  productName: string;
+  createdAt: string;
+};
+
+/**
+ * Homepage social proof: the longest recent APPROVED reviews that carry
+ * actual comment text, joined to their products. Real data only.
+ */
+export function getFeaturedReviews(take = 3): Promise<FeaturedReview[]> {
+  return cachedCatalog(["featured-reviews", String(take)], async () => {
+    const reviews = await prisma.review.findMany({
+      where: { status: "APPROVED", comment: { not: null } },
+      orderBy: [{ rating: "desc" }, { createdAt: "desc" }],
+      take: 24,
+      select: {
+        id: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+        user: { select: { name: true } },
+        product: { select: { slug: true, name: true } },
+      },
+    });
+
+    // Prefer 4–5★ spread across distinct products, longest comments first.
+    const seen = new Set<string>();
+    const picked: FeaturedReview[] = [];
+    for (const review of [...reviews].sort((a, b) => (b.comment?.length ?? 0) - (a.comment?.length ?? 0))) {
+      if (picked.length >= take) break;
+      if (seen.has(review.product.slug)) continue;
+      seen.add(review.product.slug);
+      picked.push({
+        id: review.id,
+        rating: review.rating,
+        comment: (review.comment ?? "").slice(0, 220),
+        authorName: review.user.name ?? "Verified customer",
+        productSlug: review.product.slug,
+        productName: review.product.name,
+        createdAt: review.createdAt.toISOString(),
+      });
+    }
+    return picked;
+  });
+}

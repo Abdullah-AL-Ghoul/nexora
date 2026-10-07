@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { SectionHeading } from "@/components/layout/section-heading";
 import { ProductGrid } from "@/components/product/product-grid";
 import { ProductQuickAdd } from "@/components/product/product-quick-add";
-import { getHomeSections, type CategoryCard } from "@/lib/queries/catalog";
+import { Faq } from "@/components/home/faq";
+import { NewsletterForm } from "@/components/home/newsletter-form";
+import { Testimonials } from "@/components/home/testimonials";
+import { getFeaturedReviews, getHomeSections, type CategoryCard } from "@/lib/queries/catalog";
 import { formatPrice } from "@/lib/format";
 import { CountUp } from "@/lib/motion/count-up";
 import { Reveal } from "@/lib/motion/reveal";
@@ -41,6 +44,7 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   const { featuredCategories, trending, offers, bestSellers, stats } = await getHomeSections();
+  const reviews = await getFeaturedReviews(3);
   const heroProduct = trending[0] ?? null;
 
   return (
@@ -260,6 +264,12 @@ export default async function HomePage() {
           <ProductGrid products={bestSellers.slice(0, 4)} rankOffset={1} />
         </Reveal>
 
+        {/* Social proof — real approved reviews */}
+        <Testimonials reviews={reviews} />
+
+        {/* FAQ */}
+        <Faq />
+
         {/* Brand Philosophy / Editorial Quality Commitment */}
         <Reveal
           as="section"
@@ -287,6 +297,17 @@ export default async function HomePage() {
               <Button asChild size="lg" variant="outline" className="border-border">
                 <Link href="/categories">Discover All Disciplines</Link>
               </Button>
+            </div>
+            <div className="mt-10 border-t border-border pt-8">
+              <p className="text-sm font-medium text-foreground">
+                Get first access to new drops
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                One email per season. No noise, unsubscribe anytime.
+              </p>
+              <div className="mt-4 flex justify-center">
+                <NewsletterForm />
+              </div>
             </div>
           </div>
         </Reveal>
