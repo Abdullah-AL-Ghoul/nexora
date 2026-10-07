@@ -157,7 +157,7 @@ export default async function HomePage() {
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
               <dt className="text-xs text-muted-foreground">Curated Catalog</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                <CountUp value={stats.productCount} format={(n) => `${Math.round(n)}+`} />
+                <CountUp value={stats.productCount} suffix="+" />
               </dd>
             </div>
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
@@ -169,13 +169,13 @@ export default async function HomePage() {
             <div className="border-r-0 border-border sm:border-r last:border-r-0">
               <dt className="text-xs text-muted-foreground">Client Satisfaction</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-primary">
-                <CountUp value={stats.averageRating} format={(n) => `${n.toFixed(1)} ★`} />
+                <CountUp value={stats.averageRating} decimals={1} suffix=" ★" />
               </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Verified Reviews</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                <CountUp value={stats.reviewCount} format={(n) => `${Math.round(n)}+`} />
+                <CountUp value={stats.reviewCount} suffix="+" />
               </dd>
             </div>
           </dl>

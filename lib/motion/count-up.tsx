@@ -4,22 +4,27 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * Counts up to `value` when scrolled into view. Respects prefers-reduced-motion
- * (jumps straight to the final value). Formats with Intl — pass `format` for
- * custom suffixes/prefixes ("48+", "4.4★").
+ * (jumps straight to the final value). Serializable props only — this crosses
+ * the server/client boundary.
  */
 export function CountUp({
   value,
-  format = (n) => String(Math.round(n)),
+  decimals = 0,
+  prefix = "",
+  suffix = "",
   durationMs = 1100,
   className,
 }: {
   value: number;
-  format?: (n: number) => string;
+  /** Digits after the decimal point in the final display. */
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
   durationMs?: number;
   className?: string;
 }) {
   const ref = useRef<HTMLSpanElement | null>(null);
-  const [display, setDisplay] = useState(() => format(0));
+  const [display, setDisplay] = useState(() => prefix + (0).toFixed(decimals) + suffix);
 
   useEffect(() => {
     const node = ref.current;
@@ -28,6 +33,8 @@ export function CountUp({
     const reduced =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const format = (n: number) => prefix + n.toFixed(decimals) + suffix;
 
     let raf = 0;
     let started = false;
@@ -70,7 +77,7 @@ export function CountUp({
       observer.disconnect();
       cancelAnimationFrame(raf);
     };
-  }, [value, durationMs, format]);
+  }, [value, decimals, prefix, suffix, durationMs]);
 
   return (
     <span ref={ref} className={className}>
