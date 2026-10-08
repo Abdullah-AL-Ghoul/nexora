@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { formatPrice } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Shipping & Returns",

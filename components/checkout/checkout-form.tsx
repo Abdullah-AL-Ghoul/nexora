@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Loader2, Lock, Tag, X } from "lucide-react";
+import { ArrowRight, Loader2, Lock, ShieldCheck, Tag, X } from "lucide-react";
+import Image from "next/image";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -34,6 +35,7 @@ type QuoteLine = {
   variantId: string | null;
   name: string;
   sku: string;
+  imageUrl: string | null;
   unitPrice: number;
   qty: number;
   lineTotal: number;
@@ -400,8 +402,19 @@ export function CheckoutForm({ userName }: { userName: string }) {
           <CardContent className="space-y-4">
             <ul className="space-y-3">
               {quote.lines.map((line) => (
-                <li key={`${line.productId}:${line.variantId ?? ""}`} className="flex justify-between gap-3 text-sm">
-                  <span className="min-w-0">
+                <li key={`${line.productId}:${line.variantId ?? ""}`} className="flex items-center gap-3 text-sm">
+                  {line.imageUrl ? (
+                    <Image
+                      src={line.imageUrl}
+                      alt=""
+                      width={44}
+                      height={44}
+                      className="size-11 shrink-0 rounded-lg border border-border object-cover"
+                    />
+                  ) : (
+                    <span className="size-11 shrink-0 rounded-lg border border-border bg-muted" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{line.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {line.variantName ? `${line.variantName} · ` : ""}
@@ -460,6 +473,15 @@ export function CheckoutForm({ userName }: { userName: string }) {
             </dl>
           </CardContent>
         </Card>
+
+        <div className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/[0.06] p-4">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+          <div className="text-xs leading-relaxed text-muted-foreground">
+            <p className="font-medium text-foreground">The NEXORA guarantee</p>
+            2-year warranty on every item · 30-day no-questions returns · payment captured only
+            after your order is verified fulfillable.
+          </div>
+        </div>
       </aside>
     </div>
   );
