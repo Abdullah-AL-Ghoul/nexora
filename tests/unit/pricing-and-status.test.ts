@@ -88,3 +88,14 @@ describe("order status transitions", () => {
     expect(restockOn("SHIPPED")).toBe(false);
   });
 });
+
+describe("coupon limit and discount guards", () => {
+  it("rejects negative percentages and values safely", () => {
+    expect(computeDiscount({ type: "PERCENT", value: 0, maxDiscountAmount: null }, 10_000)).toBe(0);
+    expect(computeDiscount({ type: "FIXED", value: 0, maxDiscountAmount: null }, 10_000)).toBe(0);
+  });
+
+  it("handles 100% discount correctly", () => {
+    expect(computeDiscount({ type: "PERCENT", value: 100, maxDiscountAmount: null }, 5000)).toBe(5000);
+  });
+});
