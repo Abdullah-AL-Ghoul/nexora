@@ -44,11 +44,13 @@ export async function cleanTestOrders(): Promise<void> {
   await prisma.$disconnect();
 }
 
-cleanTestOrders()
-  .then(() => {
-    process.exit(0);
-  })
-  .catch((err) => {
-    console.error("Cleanup error:", err);
-    process.exit(1);
-  });
+if (process.argv[1]?.includes("clean-test-orders")) {
+  cleanTestOrders()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error("Cleanup error:", err);
+      process.exit(1);
+    });
+}
