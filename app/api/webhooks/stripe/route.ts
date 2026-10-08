@@ -180,12 +180,25 @@ export async function POST(request: Request) {
         }
       }
     } else if (event.type === "payment_intent.payment_failed") {
-      const paymentIntentId = object.id;
-      if (typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_")) {
-        await prisma.payment.updateMany({
-          where: { stripePaymentIntentId: paymentIntentId, status: "PENDING" },
-          data: { status: "FAILED" },
+      const paymentIntentId = typeof object.id === "string" && object.id.startsWith("pi_") ? object.id : null;
+      const orderId = orderIdOf(object);
+
+      if (paymentIntentId) {
+        const payment = await prisma.payment.findUnique({
+          where: { stripePaymentIntentId: paymentIntentId },
+          select: { orderId: true },
         });
+        const targetOrderId = payment?.orderId ?? orderId;
+        if (targetOrderId) {
+          await cancelPendingOrder(targetOrderId);
+        } else {
+          await prisma.payment.updateMany({
+            where: { stripePaymentIntentId: paymentIntentId, status: "PENDING" },
+            data: { status: "FAILED" },
+          });
+        }
+      } else if (orderId) {
+        await cancelPendingOrder(orderId);
       }
     }
 
