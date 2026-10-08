@@ -39,7 +39,24 @@ const VALUE_PROPS = [
 ] as const;
 
 export const metadata: Metadata = {
+  title: "NEXORA — Curated Luxury & Everyday Essentials",
+  description:
+    "Discover handcrafted elegance, precision footwear, refined apparel, and modern lifestyle essentials with complimentary express worldwide delivery.",
   alternates: { canonical: "/" },
+  openGraph: {
+    title: "NEXORA — Curated Luxury & Everyday Essentials",
+    description:
+      "Discover handcrafted elegance, precision footwear, refined apparel, and modern lifestyle essentials.",
+    url: "/",
+    siteName: "NEXORA",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NEXORA — Curated Luxury & Everyday Essentials",
+    description:
+      "Discover handcrafted elegance, precision footwear, refined apparel, and modern lifestyle essentials.",
+  },
 };
 
 export default async function HomePage() {
