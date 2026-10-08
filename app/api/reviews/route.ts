@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth/guards";
 import { CATALOG_TAG } from "@/lib/cache";
 
+import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
+
 const reviewSchema = z.object({
   productId: z.string().min(1, "Product ID is required"),
   rating: z.number().int().min(1).max(5),
@@ -12,6 +14,9 @@ const reviewSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const limit = rateLimit(`reviews:${clientIp(request)}`, 10, 60_000);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSeconds);
+
   try {
     const session = await getSession();
     if (!session) {
