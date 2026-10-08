@@ -42,7 +42,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <Label htmlFor="password">New password</Label>
         <Input id="password" type="password" autoComplete="new-password" placeholder="At least 8 characters" {...form.register("password")} />
         {form.formState.errors.password && (
-          <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.password.message}</p>
         )}
       </div>
 

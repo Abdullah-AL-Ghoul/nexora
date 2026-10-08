@@ -47,7 +47,7 @@ export function ForgotPasswordForm() {
         <Label htmlFor="email">Email</Label>
         <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" {...form.register("email")} />
         {form.formState.errors.email && (
-          <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+          <p role="alert" className="text-sm text-destructive">{form.formState.errors.email.message}</p>
         )}
       </div>
 
