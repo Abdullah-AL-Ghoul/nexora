@@ -62,7 +62,7 @@ export function CatalogToolbar({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
       <p className="text-sm text-muted-foreground" aria-live="polite">
         <span className="font-medium text-foreground tabular-nums">{total}</span>{" "}
         {total === 1 ? noun : `${noun}s`}
@@ -93,7 +93,7 @@ export function CatalogToolbar({
         </Sheet>
 
         <Select value={sort} onValueChange={changeSort}>
-          <SelectTrigger size="sm" className="w-44" aria-label="Sort products">
+          <SelectTrigger size="sm" className="w-36 sm:w-44" aria-label="Sort products">
             <SelectValue>{SORT_LABELS[sort]}</SelectValue>
           </SelectTrigger>
           <SelectContent>

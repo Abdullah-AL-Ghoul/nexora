@@ -139,7 +139,7 @@ export function ProductTabs({
   return (
     <div id="reviews" className="scroll-mt-20 border-t border-border pt-12">
       {/* Tab Navigation */}
-      <div className="flex border-b border-border">
+      <div className="flex border-b border-border overflow-x-auto no-scrollbar scroll-smooth">
         <button
           type="button"
           onClick={() => setActiveTab("reviews")}
