@@ -8,8 +8,20 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 function createClient(): PrismaClient {
   const env = getServerEnv();
   const isLocal = env.DATABASE_URL.includes("localhost") || env.DATABASE_URL.includes("127.0.0.1");
+  let connectionString = env.DATABASE_URL;
+  if (!isLocal) {
+    try {
+      const parsed = new URL(env.DATABASE_URL);
+      parsed.searchParams.delete("sslmode");
+      parsed.searchParams.delete("uselibpqcompat");
+      connectionString = parsed.toString();
+    } catch {
+      // fallback to raw URL if parsing fails
+    }
+  }
+
   const pool = new Pool({
-    connectionString: env.DATABASE_URL,
+    connectionString,
     ssl: isLocal ? false : { rejectUnauthorized: false },
   });
   const adapter = new PrismaPg(pool);
