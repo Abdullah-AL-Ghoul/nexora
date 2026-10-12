@@ -56,3 +56,6 @@ next-env.d.ts
 .windsurf/
 skills-lock.json
 .zcode/
+
+.vercel
+.env*
