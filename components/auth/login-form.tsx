@@ -12,6 +12,7 @@ import { loginSchema, type LoginInput } from "@/lib/validators/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GoogleSignInButton } from "@/components/auth/google-button";
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
   const router = useRouter();
@@ -145,6 +146,74 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
           )}
         </Button>
       </form>
+
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">or continue with</span>
+        </div>
+      </div>
+
+      <GoogleSignInButton callbackURL={redirectTo} />
+
+      {/* Demo Credentials Quick-Fill Card */}
+      <div className="rounded-xl border border-border/80 bg-muted/40 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Quick Demo Accounts
+          </p>
+          <span className="text-[10px] bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-full">
+            Instant Fill
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs font-medium justify-start border-border/70 hover:border-primary/50"
+            onClick={() => {
+              form.setValue("email", "admin@nexora.demo");
+              form.setValue("password", "NexoraDemo!2026");
+              toast.info("Admin credentials loaded. Click 'Sign in'.");
+            }}
+          >
+            👑 Admin
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs font-medium justify-start border-border/70 hover:border-primary/50"
+            onClick={() => {
+              form.setValue("email", "manager@nexora.demo");
+              form.setValue("password", "NexoraDemo!2026");
+              toast.info("Manager credentials loaded. Click 'Sign in'.");
+            }}
+          >
+            💼 Manager
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs font-medium justify-start border-border/70 hover:border-primary/50 col-span-2"
+            onClick={() => {
+              form.setValue("email", "customer@nexora.demo");
+              form.setValue("password", "NexoraDemo!2026");
+              toast.info("Customer credentials loaded. Click 'Sign in'.");
+            }}
+          >
+            🛍️ Customer (VIP Buyer)
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground text-center">
+          Password: <code className="font-mono text-foreground font-semibold">NexoraDemo!2026</code>
+        </p>
+      </div>
     </div>
   );
 }
+

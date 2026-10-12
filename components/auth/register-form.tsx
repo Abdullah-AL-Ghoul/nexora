@@ -11,6 +11,7 @@ import { registerSchema, type RegisterInput } from "@/lib/validators/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GoogleSignInButton } from "@/components/auth/google-button";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -63,9 +64,20 @@ export function RegisterForm() {
         {pending ? "Creating account…" : "Create account"}
       </Button>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">or sign up with</span>
+        </div>
+      </div>
+
+      <GoogleSignInButton callbackURL="/account" />
+
+      <p className="text-center text-sm text-muted-foreground pt-2">
         Already have an account?{" "}
-        <Link href="/login" className="text-foreground hover:underline">
+        <Link href="/login" className="text-foreground hover:underline font-medium">
           Sign in
         </Link>
       </p>

@@ -2,7 +2,9 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "@/lib/db";
-import { getPublicEnv } from "@/lib/env";
+import { getPublicEnv, getServerEnv } from "@/lib/env";
+
+const serverEnv = getServerEnv();
 
 /**
  * NEXORA auth server instance (better-auth + Prisma adapter).
@@ -20,6 +22,16 @@ import { getPublicEnv } from "@/lib/env";
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  socialProviders: {
+    ...(serverEnv.GOOGLE_CLIENT_ID && serverEnv.GOOGLE_CLIENT_SECRET
+      ? {
+          google: {
+            clientId: serverEnv.GOOGLE_CLIENT_ID,
+            clientSecret: serverEnv.GOOGLE_CLIENT_SECRET,
+          },
+        }
+      : {}),
+  },
   trustedOrigins: [
     new URL(getPublicEnv().NEXT_PUBLIC_APP_URL).origin,
     "http://localhost:3000",

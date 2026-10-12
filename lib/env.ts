@@ -24,6 +24,8 @@ const serverEnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().default(""),
   /** "1" enables the local mock payment endpoint (never set in production). */
   NEXORA_MOCK_PAY: z.string().default(""),
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
 });
 
 type ClientEnv = z.infer<typeof clientEnvSchema>;
