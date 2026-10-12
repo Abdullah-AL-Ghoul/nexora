@@ -1,11 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
-import { PackageX } from "lucide-react";
 
 import { cn } from "cn";
 import { Price } from "@/components/product/price";
 import { RatingStars } from "@/components/product/rating-stars";
 import { ProductQuickAdd } from "@/components/product/product-quick-add";
+import { ProductCardImage } from "@/components/product/product-card-image";
 import { discountPercent } from "@/lib/format";
 import type { ProductCardData } from "@/lib/queries/catalog";
 
@@ -26,8 +25,6 @@ export function ProductCard({
   /** Catalog rank for "Hall of Fame" treatment (1-based). */
   rank?: number;
 }) {
-  const image = product.images[0];
-  const hoverImage = product.images[1];
   const percent = discountPercent(product.price, product.compareAtPrice);
   const outOfStock = product.stock <= 0;
   const isNew = isRecentlyAdded(product.createdAt);
@@ -35,43 +32,12 @@ export function ProductCard({
   return (
     <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-soft transition-all duration-300 hover:border-primary/50 hover:shadow-glow hover:-translate-y-0.5">
       <div className="relative aspect-square overflow-hidden bg-muted">
-        <Link
-          href={`/product/${product.slug}`}
-          prefetch={true}
-          className="relative block size-full"
-          aria-label={product.name}
-          tabIndex={-1}
-        >
-          {image ? (
-            <Image
-              src={image.url}
-              alt={image.alt || product.name}
-              fill
-              priority={priority}
-              loading={priority ? undefined : "lazy"}
-              decoding="async"
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              className="object-cover transition-all duration-700 group-hover:scale-105 group-hover:opacity-0"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground/50">
-              <PackageX className="size-10" aria-hidden="true" />
-            </div>
-          )}
-          {/* Second-angle crossfade on hover. */}
-          {hoverImage ? (
-            <Image
-              src={hoverImage.url}
-              alt=""
-              aria-hidden="true"
-              fill
-              loading="lazy"
-              decoding="async"
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              className="scale-105 object-cover opacity-0 transition-all duration-700 group-hover:scale-100 group-hover:opacity-100"
-            />
-          ) : null}
-        </Link>
+        <ProductCardImage
+          images={product.images}
+          productSlug={product.slug}
+          productName={product.name}
+          priority={priority}
+        />
 
         <div className="absolute left-2.5 top-2.5 flex flex-col items-start gap-1.5">
           {rank !== undefined && (

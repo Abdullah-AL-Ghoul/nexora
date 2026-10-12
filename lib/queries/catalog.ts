@@ -14,7 +14,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 export const cardInclude = {
   images: {
     orderBy: { position: "asc" },
-    take: 2,
+    take: 6,
     select: { url: true, alt: true },
   },
   category: { select: { name: true, slug: true } },

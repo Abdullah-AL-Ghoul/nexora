@@ -8,6 +8,7 @@ import { ProductGallery } from "@/components/product/product-gallery";
 import { ProductTabs } from "@/components/product/product-tabs";
 import { RatingStars } from "@/components/product/rating-stars";
 import { RelatedProducts } from "@/components/product/related-products";
+import { ProductTrustBadges } from "@/components/product/product-trust-badges";
 import { getSession } from "@/lib/auth/guards";
 import {
   getProductBySlug,
@@ -228,7 +229,10 @@ export default async function ProductPage({
             }))}
             isAuthenticated={session !== null}
             initialInWishlist={wishlistIds.includes(product.id)}
+            imageUrl={product.images[0]?.url}
           />
+
+          <ProductTrustBadges stock={product.stock} />
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-5 text-sm">
             <div className="flex gap-2">

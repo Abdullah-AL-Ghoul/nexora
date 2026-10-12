@@ -1,9 +1,9 @@
-import { chromium } from "@playwright/test";
+import { chromium, type Page } from "@playwright/test";
 import { cleanTestOrders } from "./clean-test-orders";
 
 const BASE_URL = "http://localhost:3000";
 
-async function showBanner(page: any, text: string, color = "#4f46e5") {
+async function showBanner(page: Page, text: string, color = "#4f46e5") {
   await page.evaluate(
     ({ text, color }: { text: string; color: string }) => {
       let banner = document.getElementById("nexora-test-banner");

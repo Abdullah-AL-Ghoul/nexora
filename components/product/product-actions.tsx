@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/lib/cart/store";
 import { VariantPicker, type VariantOption } from "@/components/product/variant-picker";
 import { WishlistButton } from "@/components/product/wishlist-button";
+import { ProductStickyBar } from "@/components/product/product-sticky-bar";
 
 export type ProductActionsProduct = {
   id: string;
@@ -21,13 +22,16 @@ export function ProductActions({
   variants,
   isAuthenticated,
   initialInWishlist,
+  imageUrl,
 }: {
   product: ProductActionsProduct;
   variants: VariantOption[];
   isAuthenticated: boolean;
   initialInWishlist: boolean;
+  imageUrl?: string | null;
 }) {
   const addItem = useCartStore((state) => state.addItem);
+  const openDrawer = useCartStore((state) => state.openDrawer);
   const [variantId, setVariantId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
 
@@ -44,6 +48,7 @@ export function ProductActions({
       `Added “${product.name}”${selectedVariant ? ` (${selectedVariant.name})` : ""} to cart`
     );
     setQty(1);
+    openDrawer();
   }
 
   return (
@@ -101,9 +106,14 @@ export function ProductActions({
         />
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Secure checkout · Free shipping over $100 · 30-day returns
-      </p>
+      <ProductStickyBar
+        product={product}
+        selectedVariantName={selectedVariant?.name ?? null}
+        selectedVariantId={variantId}
+        price={selectedVariant ? product.price + selectedVariant.priceDelta : product.price}
+        imageUrl={imageUrl ?? null}
+        outOfStock={outOfStock}
+      />
     </div>
   );
 }

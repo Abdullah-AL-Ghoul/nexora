@@ -9,6 +9,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Star,
+  ThumbsUp,
   Truck,
   X,
 } from "lucide-react";
@@ -71,6 +72,18 @@ export function ProductTabs({
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [formComment, setFormComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [helpfulMap, setHelpfulMap] = useState<Record<string, { count: number; voted: boolean }>>({});
+
+  function handleHelpfulClick(reviewId: string) {
+    setHelpfulMap((prev) => {
+      const base = Math.floor((reviewId.charCodeAt(0) % 7) + 3);
+      const current = prev[reviewId] ?? { count: base, voted: false };
+      const nextVoted = !current.voted;
+      const nextCount = nextVoted ? current.count + 1 : Math.max(0, current.count - 1);
+      toast.success(nextVoted ? "Marked as helpful" : "Feedback removed");
+      return { ...prev, [reviewId]: { count: nextCount, voted: nextVoted } };
+    });
+  }
 
   const activeStarCount = hoverRating ?? formRating;
 
@@ -413,6 +426,25 @@ export function ProductTabs({
                           {review.comment}
                         </p>
                       )}
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleHelpfulClick(review.id)}
+                          aria-label="Mark review as helpful"
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-all cursor-pointer ${
+                            helpfulMap[review.id]?.voted
+                              ? "bg-primary/10 border-primary/40 text-primary font-semibold"
+                              : "border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <ThumbsUp className="size-3" aria-hidden="true" />
+                          <span>Helpful</span>
+                          <span className="font-mono text-[11px] tabular-nums">
+                            ({helpfulMap[review.id]?.count ?? Math.floor((review.id.charCodeAt(0) % 7) + 3)})
+                          </span>
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
