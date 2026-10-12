@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Heart, LogOut, Menu, Package, Search, User } from "lucide-react";
+import { Heart, LogOut, Menu, Package, Search, ShieldAlert, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "cn";
@@ -29,7 +29,12 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { SearchDialog } from "@/components/search/search-dialog";
 
-export type HeaderUser = { name: string; email: string; wishlistCount?: number } | null;
+export type HeaderUser = {
+  name: string;
+  email: string;
+  role?: string;
+  wishlistCount?: number;
+} | null;
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
@@ -111,6 +116,16 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                   <div className="my-2 border-t border-border" />
                   {user ? (
                     <>
+                      {user.role === "ADMIN" && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setMobileOpen(false)}
+                          className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/15"
+                        >
+                          <ShieldAlert className="size-4" />
+                          Admin Dashboard
+                        </Link>
+                      )}
                       <Link
                         href="/account"
                         onClick={() => setMobileOpen(false)}
@@ -253,6 +268,14 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="truncate">{user.name}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {user.role === "ADMIN" && (
+                    <DropdownMenuItem asChild className="bg-primary/5 font-medium text-primary focus:bg-primary/10">
+                      <Link href="/admin">
+                        <ShieldAlert className="size-4" aria-hidden="true" />
+                        Admin Dashboard
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem asChild>
                     <Link href="/account">
                       <User className="size-4" aria-hidden="true" />

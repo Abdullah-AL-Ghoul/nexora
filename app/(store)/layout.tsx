@@ -15,7 +15,12 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     : [0];
 
   const user: HeaderUser = session
-    ? { name: session.user.name, email: session.user.email, wishlistCount }
+    ? {
+        name: session.user.name,
+        email: session.user.email,
+        role: String((session.user as { role?: string }).role || "CUSTOMER"),
+        wishlistCount,
+      }
     : null;
 
   return (
