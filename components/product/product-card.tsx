@@ -5,6 +5,7 @@ import { Price } from "@/components/product/price";
 import { RatingStars } from "@/components/product/rating-stars";
 import { ProductQuickAdd } from "@/components/product/product-quick-add";
 import { ProductQuickView } from "@/components/product/product-quick-view";
+import { ProductCardWishlist } from "@/components/product/product-card-wishlist";
 import { ProductCardImage } from "@/components/product/product-card-image";
 import { discountPercent } from "@/lib/format";
 import type { ProductCardData } from "@/lib/queries/catalog";
@@ -39,6 +40,9 @@ export function ProductCard({
           productName={product.name}
           priority={priority}
         />
+
+        {/* Top-Right Quick Wishlist Heart */}
+        <ProductCardWishlist productId={product.id} productName={product.name} />
 
         <div className="absolute left-2.5 top-2.5 flex flex-col items-start gap-1.5">
           {rank !== undefined && (

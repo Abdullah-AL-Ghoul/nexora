@@ -257,9 +257,11 @@ export function CartDrawer() {
                 {formatPrice(subtotal)}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground leading-normal">
-              Shipping, taxes, and promotional discounts are calculated during checkout.
-            </p>
+            <div className="rounded-lg border border-border/50 bg-muted/40 p-2.5 text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>🔒 Encrypted Checkout</span>
+              <span>⚡ Fast Dispatch</span>
+              <span>🛡️ 2-Year Warranty</span>
+            </div>
 
             <div className="flex flex-col gap-2">
               <Button asChild size="lg" className="w-full gap-2" onClick={closeDrawer}>

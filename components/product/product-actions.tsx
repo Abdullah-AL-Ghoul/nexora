@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/lib/cart/store";
 import { VariantPicker, type VariantOption } from "@/components/product/variant-picker";
 import { WishlistButton } from "@/components/product/wishlist-button";
+import { ProductShareButton } from "@/components/product/product-share-button";
 import { ProductStickyBar } from "@/components/product/product-sticky-bar";
 
 export type ProductActionsProduct = {
@@ -104,6 +105,8 @@ export function ProductActions({
           isAuthenticated={isAuthenticated}
           initialInWishlist={initialInWishlist}
         />
+
+        <ProductShareButton productName={product.name} />
       </div>
 
       <ProductStickyBar
