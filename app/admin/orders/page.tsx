@@ -16,6 +16,8 @@ import { AdminPagination } from "@/components/admin/admin-pagination";
 import { ExportOrdersButton } from "@/components/admin/export-orders-button";
 import type { OrderStatus } from "@/lib/generated/prisma/client";
 
+import { QuickOrderStatusSelect } from "@/components/admin/quick-order-status-select";
+
 export const metadata = { title: "Orders" };
 
 const PAGE_SIZE = 20;
@@ -103,9 +105,9 @@ export default async function AdminOrdersPage({
                   {order.user.name ?? order.user.email}
                 </TableCell>
                 <TableCell className="px-4 py-3 text-muted-foreground">{order._count.items}</TableCell>
-                <TableCell className="px-4 py-3 text-foreground">{formatPrice(order.total)}</TableCell>
+                <TableCell className="px-4 py-3 text-foreground font-medium">{formatPrice(order.total)}</TableCell>
                 <TableCell className="px-4 py-3">
-                  <Badge variant={statusVariant[order.status] ?? "secondary"}>{order.status}</Badge>
+                  <QuickOrderStatusSelect orderId={order.id} currentStatus={order.status} />
                 </TableCell>
                 <TableCell className="px-4 py-3 text-muted-foreground">
                   {formatDate(order.placedAt)}
