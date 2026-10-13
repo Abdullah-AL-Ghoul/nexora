@@ -25,6 +25,7 @@ export const checkoutSchema = z
   .object({
     items: cartItemsSchema,
     shippingMethod: z.enum(["standard", "express"]),
+    paymentMethod: z.enum(["card", "cod"]).nullish(),
     address: addressSchema,
     couponCode: couponCodeSchema.nullish(),
     notes: z.string().trim().max(500).nullish(),
@@ -48,6 +49,7 @@ export const checkoutFormSchema = z
     country: z.string().trim().min(2, "Country is required").max(56),
     phone: z.union([z.string().trim().min(5, "Phone looks too short").max(32), z.literal("")]).nullish(),
     shippingMethod: z.enum(["standard", "express"]),
+    paymentMethod: z.enum(["card", "cod"]),
     notes: z.string().trim().max(500).nullish(),
   })
   .strict();

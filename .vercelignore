@@ -1,0 +1,16 @@
+.git
+node_modules
+.next
+.agents
+.claude
+.zcode
+.windsurf
+skills-lock.json
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.webm
+coverage
+test-results
+playwright-report

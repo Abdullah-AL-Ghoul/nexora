@@ -56,6 +56,14 @@ export async function POST(request: Request) {
     const order = result.order;
     const env = getServerEnv();
 
+    // Cash on Delivery (COD) path: order remains PENDING with payment provider "cod"
+    if (parsed.data.paymentMethod === "cod") {
+      return NextResponse.json(
+        { orderId: order.id, orderNumber: order.orderNumber, cod: true },
+        { status: 201 }
+      );
+    }
+
     if (env.STRIPE_SECRET_KEY) {
       try {
         const stripe = new Stripe(env.STRIPE_SECRET_KEY);

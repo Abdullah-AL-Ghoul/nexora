@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Price } from "@/components/product/price";
 import { RatingStars } from "@/components/product/rating-stars";
 import { ProductQuickAdd } from "@/components/product/product-quick-add";
+import { ProductQuickView } from "@/components/product/product-quick-view";
 import { ProductCardImage } from "@/components/product/product-card-image";
 import { discountPercent } from "@/lib/format";
 import type { ProductCardData } from "@/lib/queries/catalog";
@@ -64,8 +65,9 @@ export function ProductCard({
             </span>
           </div>
         ) : (
-          <div className="absolute inset-x-2.5 bottom-2.5 translate-y-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 flex justify-center">
+          <div className="absolute inset-x-2.5 bottom-2.5 translate-y-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 flex items-center justify-center gap-2">
             <ProductQuickAdd productId={product.id} name={product.name} disabled={outOfStock} />
+            <ProductQuickView product={product} />
           </div>
         )}
       </div>

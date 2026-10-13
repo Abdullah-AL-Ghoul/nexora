@@ -186,7 +186,14 @@ export async function createOrder(
               lineTotal: line.lineTotal,
             })),
           },
-          payment: { create: { amount: total, currency: "usd", status: "PENDING" } },
+          payment: {
+            create: {
+              amount: total,
+              currency: "usd",
+              provider: input.paymentMethod === "cod" ? "cod" : "stripe",
+              status: "PENDING",
+            },
+          },
         },
         select: orderSelect,
       });

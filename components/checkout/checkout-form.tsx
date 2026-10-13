@@ -159,10 +159,12 @@ export function CheckoutForm({ userName }: { userName: string }) {
       country: "",
       phone: "",
       shippingMethod: "standard",
+      paymentMethod: "card",
       notes: "",
     },
   });
   const method = useWatch({ control: form.control, name: "shippingMethod" });
+  const paymentMethod = useWatch({ control: form.control, name: "paymentMethod" });
 
   const subtotal = quote?.subtotal ?? 0;
   const discount = couponResult?.discount ?? 0;
@@ -174,13 +176,14 @@ export function CheckoutForm({ userName }: { userName: string }) {
     if (items.length === 0 || quote === null || pending) return;
     setPending(true);
     try {
-      const { shippingMethod, notes, ...address } = values;
+      const { shippingMethod, paymentMethod, notes, ...address } = values;
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items,
           shippingMethod,
+          paymentMethod,
           address,
           couponCode: couponCode ?? null,
           notes: notes?.trim() ? notes : null,
@@ -191,11 +194,19 @@ export function CheckoutForm({ userName }: { userName: string }) {
         orderId?: string;
         url?: string | null;
         mock?: boolean;
+        cod?: boolean;
         error?: string;
       };
 
       if (!response.ok || !data.orderId) {
         toast.error(data.error ?? "Unable to place your order.");
+        return;
+      }
+
+      if (data.cod) {
+        clear();
+        toast.success("Order confirmed! Pay with cash upon delivery.");
+        router.push(`/account/orders/${data.orderId}?placed=1`);
         return;
       }
 
@@ -362,6 +373,61 @@ export function CheckoutForm({ userName }: { userName: string }) {
 
         <Card>
           <CardHeader>
+            <CardTitle className="text-base">Payment method</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
+                paymentMethod === "card"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
+              }`}
+            >
+              <input
+                type="radio"
+                value="card"
+                className="mt-1 accent-[var(--color-primary)]"
+                {...form.register("paymentMethod")}
+              />
+              <span className="flex-1">
+                <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                  Card Payment
+                  <span className="text-xs text-primary font-semibold">Instant</span>
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Encrypted Stripe checkout / Visa & Mastercard
+                </span>
+              </span>
+            </label>
+
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
+                paymentMethod === "cod"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
+              }`}
+            >
+              <input
+                type="radio"
+                value="cod"
+                className="mt-1 accent-[var(--color-primary)]"
+                {...form.register("paymentMethod")}
+              />
+              <span className="flex-1">
+                <span className="flex items-center justify-between gap-2 text-sm font-medium">
+                  Cash on Delivery (COD)
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Available</span>
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Pay cash to courier upon inspecting shipment
+                </span>
+              </span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">Order notes (optional)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -382,7 +448,8 @@ export function CheckoutForm({ userName }: { userName: string }) {
             </>
           ) : (
             <>
-              Place order · {formatPrice(total)} <ArrowRight className="size-4" aria-hidden="true" />
+              {paymentMethod === "cod" ? "Confirm Order with Cash on Delivery" : "Place order · " + formatPrice(total)}{" "}
+              <ArrowRight className="size-4" aria-hidden="true" />
             </>
           )}
         </Button>
