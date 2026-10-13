@@ -10,9 +10,13 @@ export default async function RegisterPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1 text-center">
-        <h1 className="text-xl font-semibold text-foreground">Create your account</h1>
-        <p className="text-sm text-muted-foreground">Join NEXORA — it only takes a moment</p>
+      <div className="space-y-2 text-center">
+        <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground">
+          Create an Account
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Join the NEXORA circle for bespoke recommendations and private previews.
+        </p>
       </div>
       <RegisterForm />
     </div>

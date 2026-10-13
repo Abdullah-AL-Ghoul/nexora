@@ -26,9 +26,13 @@ export default async function LoginPage({
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1 text-center">
-        <h1 className="text-xl font-semibold text-foreground">Welcome back</h1>
-        <p className="text-sm text-muted-foreground">Sign in to your NEXORA account</p>
+      <div className="space-y-2 text-center">
+        <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground">
+          Welcome Back
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Sign in to access your curated orders, wishlist, and private offers.
+        </p>
       </div>
       <Suspense fallback={<div className="h-48 flex items-center justify-center text-xs text-muted-foreground">Loading login form…</div>}>
         <LoginForm redirectTo={safeRedirect} />

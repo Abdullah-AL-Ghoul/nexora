@@ -140,30 +140,45 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
 
         <Button
           type="submit"
-          className="w-full gap-2 shadow-sm"
+          className="w-full gap-2 shadow-md shadow-primary/20 text-sm font-semibold h-11"
           disabled={pending}
         >
           {pending ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              Signing in…
+              Verifying credentials…
             </>
           ) : (
-            "Sign in"
+            "Sign In to Your Account"
           )}
         </Button>
       </form>
 
-      <div className="relative my-4">
+      <div className="relative my-6">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
+          <div className="w-full border-t border-border/80" />
         </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">or continue with</span>
+        <div className="relative flex justify-center text-[11px] uppercase tracking-wider">
+          <span className="bg-card px-3 text-muted-foreground font-medium">Or continue with</span>
         </div>
       </div>
 
       <GoogleSignInButton callbackURL={redirectTo} />
+
+      <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4 text-center">
+        <p className="text-xs text-muted-foreground">
+          New to NEXORA?{" "}
+          <Link
+            href="/register"
+            className="font-semibold text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+          >
+            Create an Account
+          </Link>
+        </p>
+        <p className="text-[11px] text-muted-foreground/70 mt-1">
+          Complimentary membership includes order tracking & curated perks.
+        </p>
+      </div>
     </div>
   );
 }
