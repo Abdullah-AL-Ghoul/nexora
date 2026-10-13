@@ -59,7 +59,14 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
       }
 
       toast.success("Welcome back! Redirecting…");
-      router.push(redirectTo);
+      const sessionRes = await authClient.getSession();
+      const userRole = (sessionRes?.data?.user as { role?: string } | undefined)?.role;
+
+      if (userRole === "ADMIN" || userRole === "MANAGER") {
+        router.push("/admin");
+      } else {
+        router.push(redirectTo || "/shop");
+      }
       router.refresh();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "An unexpected error occurred during sign in.";

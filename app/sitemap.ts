@@ -4,6 +4,8 @@ import { getPublicEnv } from "@/lib/env";
 import { getCategories } from "@/lib/queries/catalog";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Dynamic sitemap: static storefront routes + every ACTIVE product and
  * category. Admin, account, and API surfaces are intentionally excluded.
@@ -20,28 +22,32 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
   );
 
-  const [products, categories] = await Promise.all([
-    prisma.product.findMany({
-      where: { status: "ACTIVE" },
-      select: { slug: true, updatedAt: true },
-      orderBy: { updatedAt: "desc" },
-    }),
-    getCategories(),
-  ]);
+  try {
+    const [products, categories] = await Promise.all([
+      prisma.product.findMany({
+        where: { status: "ACTIVE" },
+        select: { slug: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      }),
+      getCategories(),
+    ]);
 
-  const productRoutes = products.map((product) => ({
-    url: `${appUrl}/product/${product.slug}`,
-    lastModified: product.updatedAt,
-    changeFrequency: "weekly" as const,
-    priority: 0.8,
-  }));
+    const productRoutes = products.map((product) => ({
+      url: `${appUrl}/product/${product.slug}`,
+      lastModified: product.updatedAt,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    }));
 
-  const categoryRoutes = categories.map((category) => ({
-    url: `${appUrl}/category/${category.slug}`,
-    lastModified: new Date(),
-    changeFrequency: "weekly" as const,
-    priority: 0.6,
-  }));
+    const categoryRoutes = categories.map((category) => ({
+      url: `${appUrl}/category/${category.slug}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
 
-  return [...staticRoutes, ...productRoutes, ...categoryRoutes];
+    return [...staticRoutes, ...productRoutes, ...categoryRoutes];
+  } catch {
+    return staticRoutes;
+  }
 }

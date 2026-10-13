@@ -12,10 +12,17 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const raw = typeof params.redirect === "string" ? params.redirect : "";
-  const safeRedirect = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/account";
-
   const session = await getSession();
-  if (session) redirect(safeRedirect);
+  if (session) {
+    const role = String((session.user as { role?: string }).role);
+    if (role === "ADMIN" || role === "MANAGER") {
+      redirect("/admin");
+    } else {
+      redirect(raw.startsWith("/") && !raw.startsWith("//") ? raw : "/shop");
+    }
+  }
+
+  const safeRedirect = raw.startsWith("/") && !raw.startsWith("//") ? raw : "";
 
   return (
     <div className="space-y-6">

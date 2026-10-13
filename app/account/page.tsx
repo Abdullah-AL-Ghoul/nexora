@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { requireSession } from "@/lib/auth/guards";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -17,6 +18,10 @@ const roleLabel: Record<string, string> = {
 export default async function AccountPage() {
   const session = await requireSession();
   const { user } = session;
+
+  if (user.role === "ADMIN" || user.role === "MANAGER") {
+    redirect("/admin");
+  }
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-12">
