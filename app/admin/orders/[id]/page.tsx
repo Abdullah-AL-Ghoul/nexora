@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { OrderStatusActions } from "@/components/admin/order-status-actions";
+import { OrderPrintButton } from "@/components/admin/order-print-button";
 import { STAFF_ROLES, requireRole } from "@/lib/auth/guards";
 import { PAYMENT_STATUS_LABEL, ORDER_STATUS_LABEL } from "@/lib/checkout/status";
 import { formatDate, formatPrice } from "@/lib/format";
@@ -71,7 +72,8 @@ export default async function AdminOrderDetailPage({
             </Link>
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <OrderPrintButton orderNumber={order.orderNumber} />
           <Badge variant="outline">{ORDER_STATUS_LABEL[order.status] ?? order.status}</Badge>
           <Badge variant="secondary">
             {PAYMENT_STATUS_LABEL[order.paymentStatus] ?? order.paymentStatus}
@@ -163,6 +165,67 @@ export default async function AdminOrderDetailPage({
               )}
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      {/* Printable Luxury Packing Slip & Certificate of Authenticity (Visible ONLY on print) */}
+      <div className="hidden print:block border-t-2 border-primary/40 pt-8 mt-12 space-y-6 text-black">
+        <div className="flex justify-between items-start border-b pb-4">
+          <div>
+            <h2 className="font-serif text-3xl font-bold tracking-widest uppercase">NEXORA</h2>
+            <p className="text-xs uppercase tracking-wider text-gray-500 mt-1">Haute Horlogerie & Joaillerie Atelier</p>
+          </div>
+          <div className="text-right">
+            <p className="font-serif text-sm font-semibold">Official Dispatch Record</p>
+            <p className="text-xs text-gray-600">Ref: {order.orderNumber}</p>
+            <p className="text-xs text-gray-600">Date: {formatDate(order.placedAt)}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <p className="font-semibold uppercase tracking-wider text-gray-500 mb-1">Delivered To:</p>
+            <p className="font-medium text-sm">{order.user.name ?? "Valued Collector"}</p>
+            <p className="text-gray-600">{order.user.email}</p>
+            {addressLines.map((line) => (
+              <p key={line} className="text-gray-600">{line}</p>
+            ))}
+          </div>
+          <div>
+            <p className="font-semibold uppercase tracking-wider text-gray-500 mb-1">Security & Authenticity:</p>
+            <p className="text-gray-700">✓ 2-Year International Atelier Guarantee</p>
+            <p className="text-gray-700">✓ Certified Insured Transit</p>
+            <p className="text-gray-700">✓ Serial Registration Active</p>
+            <p className="text-gray-700 mt-1">Settlement Status: <strong className="uppercase">{order.paymentStatus}</strong></p>
+          </div>
+        </div>
+
+        <div className="border-t pt-4">
+          <table className="w-full text-xs text-left">
+            <thead>
+              <tr className="border-b text-gray-500 uppercase tracking-wider">
+                <th className="py-2">Curated Item</th>
+                <th className="py-2 text-center">Qty</th>
+                <th className="py-2 text-right">Valuation</th>
+                <th className="py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {order.items.map((item) => (
+                <tr key={item.id}>
+                  <td className="py-2 font-medium">{item.name}{item.variantName ? ` (${item.variantName})` : ""}</td>
+                  <td className="py-2 text-center">{item.quantity}</td>
+                  <td className="py-2 text-right">{formatPrice(item.unitPrice)}</td>
+                  <td className="py-2 text-right font-medium">{formatPrice(item.lineTotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-between items-center border-t-2 border-primary/20 pt-4 text-xs">
+          <p className="italic text-gray-500">Each NEXORA creation is verified for gemstone purity and caliber precision.</p>
+          <p className="font-serif text-base font-bold">Total Settled: {formatPrice(order.total)}</p>
         </div>
       </div>
     </div>

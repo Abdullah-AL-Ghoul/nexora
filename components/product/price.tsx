@@ -1,5 +1,9 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { cn } from "cn";
 import { formatPrice, discountPercent } from "@/lib/format";
+import { useCurrency } from "@/components/currency/currency-provider";
 
 export function Price({
   price,
@@ -12,7 +16,22 @@ export function Price({
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
+  const { formatPrice: formatCustomPrice } = useCurrency();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const displayPrice = mounted ? formatCustomPrice(price) : formatPrice(price);
+  const displayComparePrice = compareAtPrice
+    ? mounted
+      ? formatCustomPrice(compareAtPrice)
+      : formatPrice(compareAtPrice)
+    : null;
+
   const percent = discountPercent(price, compareAtPrice ?? null);
+
   return (
     <div className={cn("flex flex-wrap items-baseline gap-2", className)}>
       <span
@@ -24,12 +43,12 @@ export function Price({
           size === "lg" && "text-2xl"
         )}
       >
-        {formatPrice(price)}
+        {displayPrice}
       </span>
-      {percent !== null && compareAtPrice !== undefined && compareAtPrice !== null && (
+      {percent !== null && displayComparePrice && (
         <>
           <span className="text-xs text-muted-foreground line-through tabular-nums">
-            {formatPrice(compareAtPrice)}
+            {displayComparePrice}
           </span>
           <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[11px] font-medium text-primary">
             -{percent}%

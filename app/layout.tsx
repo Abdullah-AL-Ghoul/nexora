@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { CurrencyProvider } from "@/components/currency/currency-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getPublicEnv } from "@/lib/env";
 import "./globals.css";
@@ -56,7 +57,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <CurrencyProvider>{children}</CurrencyProvider>
+        </ThemeProvider>
         <Toaster />
       </body>
     </html>

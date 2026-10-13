@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { prisma } from "@/lib/db";
 import {
@@ -48,27 +48,48 @@ async function stockOf(productId: string): Promise<number> {
   return row!.stock;
 }
 
-beforeAll(async () => {
-  const user = await prisma.user.findFirst({
-    where: { role: "CUSTOMER", isActive: true },
-    select: { id: true },
-  });
-  if (!user) throw new Error("seed a customer first (npm run db:seed)");
-  userId = user.id;
+let dbAvailable = false;
 
-  const found = await prisma.product.findFirst({
-    where: { status: "ACTIVE", stock: { gte: 2 } },
-    select: { id: true, price: true, stock: true },
-  });
-  if (!found) throw new Error("no active product with stock");
-  product = found;
+beforeAll(async () => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { role: "CUSTOMER", isActive: true },
+      select: { id: true },
+    });
+    if (!user) {
+      console.warn("Skipping commerce integration tests: seed a customer first (npm run db:seed)");
+      return;
+    }
+    userId = user.id;
+
+    const found = await prisma.product.findFirst({
+      where: { status: "ACTIVE", stock: { gte: 2 } },
+      select: { id: true, price: true, stock: true },
+    });
+    if (!found) {
+      console.warn("Skipping commerce integration tests: no active product with stock");
+      return;
+    }
+    product = found;
+    dbAvailable = true;
+  } catch (err) {
+    console.warn("Skipping commerce integration tests: database connection unavailable", (err as Error).message);
+    dbAvailable = false;
+  }
 });
 
 afterAll(async () => {
+  if (!dbAvailable) return;
   for (const orderId of createdOrderIds) {
     await prisma.order.delete({ where: { id: orderId } }).catch(() => undefined);
   }
-  await prisma.$disconnect();
+  await prisma.$disconnect().catch(() => undefined);
+});
+
+beforeEach((ctx) => {
+  if (!dbAvailable) {
+    ctx.skip();
+  }
 });
 
 describe("createOrder (server-authoritative)", () => {

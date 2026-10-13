@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { cn } from "cn";
 import { CartButton } from "@/components/cart/cart-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CurrencySelector } from "@/components/currency/currency-selector";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -111,6 +112,10 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
                   >
                     Wishlist
                   </Link>
+                  <div className="flex items-center justify-between px-3 py-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Currency</span>
+                    <CurrencySelector variant="outline" />
+                  </div>
                   <div className="my-2 border-t border-border" />
                   {user ? (
                     <>
@@ -251,6 +256,8 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
             </Button>
 
             <CartButton />
+
+            <CurrencySelector className="hidden md:inline-flex" />
 
             <ThemeToggle />
 

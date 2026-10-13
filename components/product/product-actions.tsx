@@ -10,6 +10,7 @@ import { VariantPicker, type VariantOption } from "@/components/product/variant-
 import { WishlistButton } from "@/components/product/wishlist-button";
 import { ProductShareButton } from "@/components/product/product-share-button";
 import { ProductStickyBar } from "@/components/product/product-sticky-bar";
+import { ConciergeDialog } from "@/components/concierge/concierge-dialog";
 
 export type ProductActionsProduct = {
   id: string;
@@ -107,6 +108,13 @@ export function ProductActions({
         />
 
         <ProductShareButton productName={product.name} />
+      </div>
+
+      <div className="flex items-center justify-between border-t border-border/60 pt-3">
+        <ConciergeDialog productName={product.name} />
+        <span className="text-[11px] text-muted-foreground tracking-wide font-medium">
+          Certified Atelier Guarantee
+        </span>
       </div>
 
       <ProductStickyBar
