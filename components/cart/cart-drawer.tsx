@@ -119,10 +119,10 @@ export function CartDrawer() {
             <div className="mt-3 rounded-lg border border-border/60 bg-muted/50 p-3">
               <div className="flex items-center justify-between text-xs">
                 {subtotal >= FREE_SHIPPING_THRESHOLD_CENTS ? (
-                  <span className="font-medium text-primary">✨ You unlocked Free Shipping!</span>
+                  <span className="font-medium text-primary">✨ Complimentary White-Glove Courier Unlocked!</span>
                 ) : (
                   <span>
-                    Add <strong className="text-primary">{formatPrice(remainingForFreeShipping)}</strong> more for free shipping
+                    Add <strong className="text-primary">{formatPrice(remainingForFreeShipping)}</strong> more for complimentary courier
                   </span>
                 )}
                 <span className="font-mono text-[11px] text-muted-foreground">{freeShippingProgress}%</span>

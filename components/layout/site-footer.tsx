@@ -30,7 +30,7 @@ const FOOTER_COLUMNS = [
       { href: "/privacy", label: "Privacy policy" },
       { href: "/terms", label: "Terms of service" },
       { href: "/shipping", label: "Shipping & returns" },
-      { href: "mailto:support@nexora.demo", label: "support@nexora.demo" },
+      { href: "mailto:concierge@nexora-luxury.com", label: "concierge@nexora-luxury.com" },
     ],
   },
 ] as const;

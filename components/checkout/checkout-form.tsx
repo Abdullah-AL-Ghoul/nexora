@@ -210,7 +210,6 @@ export function CheckoutForm({
       const data = (await response.json()) as {
         orderId?: string;
         url?: string | null;
-        mock?: boolean;
         cod?: boolean;
         error?: string;
       };
@@ -228,25 +227,12 @@ export function CheckoutForm({
       }
 
       if (data.url) {
-        // Absolute URL to Stripe's hosted checkout — external navigation.
+        // Absolute URL to Stripe's hosted checkout — real payment gateway navigation.
         window.location.assign(data.url);
         return;
       }
 
-      if (data.mock) {
-        const payResponse = await fetch("/api/checkout/mock-pay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: data.orderId }),
-        });
-        const payData = (await payResponse.json()) as { error?: string };
-        if (!payResponse.ok) {
-          toast.error(payData.error ?? "Unable to process payment.");
-          return;
-        }
-        clear();
-        router.push(`/account/orders/${data.orderId}?placed=1`);
-      }
+      toast.error("Payment session could not be established. Please try again.");
     } catch {
       toast.error("Network error — please try again.");
     } finally {
@@ -404,7 +390,7 @@ export function CheckoutForm({
                   <span className="flex-1">
                     <span className="flex items-center justify-between gap-2 text-sm font-medium">
                       {meta.label}
-                      <span className="tabular-nums">{price === 0 ? "Free" : formatPrice(price)}</span>
+                      <span className="tabular-nums font-medium text-primary">{price === 0 ? "Complimentary" : formatPrice(price)}</span>
                     </span>
                     <span className="mt-0.5 block text-xs text-muted-foreground">
                       {meta.description}
@@ -576,7 +562,7 @@ export function CheckoutForm({
               )}
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Shipping</dt>
-                <dd className="tabular-nums">{shipping === 0 ? "Free" : formatPrice(shipping)}</dd>
+                <dd className="tabular-nums font-medium text-foreground">{shipping === 0 ? "Complimentary" : formatPrice(shipping)}</dd>
               </div>
               <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
                 <dt>Total</dt>

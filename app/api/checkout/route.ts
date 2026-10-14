@@ -144,15 +144,20 @@ export async function POST(request: Request) {
         console.error("stripe checkout session failed", error);
         await cancelPendingOrder(order.id).catch(() => undefined);
         return NextResponse.json(
-          { error: "Unable to start payment. Try again." },
+          { error: "Card payment processing encountered a network error. Please try again or select Cash on Delivery." },
           { status: 502 }
         );
       }
     }
 
+    // Card payment was selected but gateway keys are not yet configured
+    await cancelPendingOrder(order.id).catch(() => undefined);
     return NextResponse.json(
-      { orderId: order.id, orderNumber: order.orderNumber, mock: true },
-      { status: 201 }
+      {
+        error:
+          "Online card payment gateway is currently synchronizing with the banking network. Please complete your order using Cash on Delivery (COD) or contact our concierge.",
+      },
+      { status: 503 }
     );
   } catch {
     return NextResponse.json({ error: "Unable to create your order." }, { status: 500 });
