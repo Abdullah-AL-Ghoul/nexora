@@ -69,7 +69,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
   async function onSubmit(values: LoginInput) {
     setPending(true);
     try {
-      const { error } = await authClient.signIn.email({
+      const { data, error } = await authClient.signIn.email({
         email: values.email.trim(),
         password: values.password,
       });
@@ -80,16 +80,11 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         return;
       }
 
-      toast.success("Welcome back! Redirecting to your atelier portal…");
-      const sessionRes = await authClient.getSession();
-      const userRole = (sessionRes?.data?.user as { role?: string } | undefined)?.role;
-
-      if (userRole === "ADMIN" || userRole === "MANAGER") {
-        router.push("/admin");
-      } else {
-        router.push(redirectTo || "/shop");
-      }
-      router.refresh();
+      toast.success("Welcome back! Entering portal…");
+      const userRole = (data?.user as { role?: string } | undefined)?.role;
+      const destination =
+        userRole === "ADMIN" || userRole === "MANAGER" ? "/admin" : redirectTo || "/shop";
+      window.location.assign(destination);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "An unexpected error occurred during sign in.";

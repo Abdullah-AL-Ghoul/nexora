@@ -77,10 +77,16 @@ export function ProductCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-          {product.category.name}
-        </span>
-        <h3 className="line-clamp-2 font-medium leading-snug transition-colors group-hover:text-primary">
+        <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+          <span className="truncate">
+            {product.brand ? `${product.brand} • ` : ""}
+            {product.category.name}
+          </span>
+          {product.compareAtPrice && product.compareAtPrice > product.price && (
+            <span className="text-primary font-semibold lowercase text-[10px]">Privilege Price</span>
+          )}
+        </div>
+        <h3 className="line-clamp-2 font-serif text-sm sm:text-[15px] font-semibold leading-snug tracking-tight text-foreground transition-colors group-hover:text-primary">
           <Link
             href={`/product/${product.slug}`}
             className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
@@ -92,7 +98,10 @@ export function ProductCard({
         {product.ratingCount > 0 ? (
           <RatingStars rating={product.ratingAvg} count={product.ratingCount} />
         ) : (
-          <span className="text-xs text-muted-foreground">No reviews yet</span>
+          <span className="text-xs text-muted-foreground/80 flex items-center gap-1">
+            <span className="size-1 rounded-full bg-primary/40" />
+            Atelier Curated Piece
+          </span>
         )}
 
         <div className="mt-auto flex items-center justify-between pt-2">
@@ -103,8 +112,8 @@ export function ProductCard({
             className={cn(outOfStock && "opacity-60")}
           />
           {product.stock > 0 && product.stock <= 5 && (
-            <span className="text-[10px] text-amber-600 dark:text-amber-400/90 font-medium tracking-wide">
-              Only {product.stock} left
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+              Only {product.stock} remaining
             </span>
           )}
         </div>

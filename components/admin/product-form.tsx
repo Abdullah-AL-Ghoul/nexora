@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ImageUploader } from "@/components/admin/image-uploader";
 
 const productFormSchema = z
   .object({
@@ -170,14 +171,19 @@ export function ProductForm({
           <Field label="Stock on hand" error={form.formState.errors.stock?.message}>
             <Input type="number" min={0} {...form.register("stock", { valueAsNumber: true })} />
           </Field>
-          <Field label="Image URL (optional)" error={form.formState.errors.imageUrl?.message}>
-            <Input
-              placeholder="https://…"
-              {...form.register("imageUrl", {
-                setValueAs: (value) => (value === "" || value === null ? null : value),
-              })}
-            />
-          </Field>
+          <div className="sm:col-span-2">
+            <Field
+              label="Product Imagery (File Upload, Direct URL, or Presets)"
+              error={form.formState.errors.imageUrl?.message}
+            >
+              <ImageUploader
+                value={form.watch("imageUrl") ?? null}
+                onChange={(url) =>
+                  form.setValue("imageUrl", url, { shouldDirty: true, shouldValidate: true })
+                }
+              />
+            </Field>
+          </div>
           <div className="sm:col-span-2">
             <Field label="Description" error={form.formState.errors.description?.message}>
               <Textarea rows={5} {...form.register("description")} />

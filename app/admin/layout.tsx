@@ -1,19 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ExternalLink, ShieldCheck, Sparkles, Store } from "lucide-react";
 
 import { AdminNav } from "@/components/admin/admin-nav";
+import { AdminAiCopilot } from "@/components/admin/admin-ai-copilot";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { requireRole } from "@/lib/auth/guards";
-
-/**
- * Admin area guard: every page under /admin runs through this layout.
- * - Unauthenticated visitors are redirected to /login.
- * - Authenticated users without a staff role are redirected to /account.
- * Individual sections tighten this further (e.g. Admin-only pages call
- * `requireRole(ADMIN_ROLES)` themselves).
- */
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  title: "Executive Portal — NEXORA Atelier",
 };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +26,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       >
         Skip to content
       </a>
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card/95 backdrop-blur-md p-5 shadow-sm">
+
+      {/* Luxury Executive Sidebar */}
+      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border/80 bg-card/95 backdrop-blur-md p-5 shadow-sm">
         <div className="mb-8 flex items-center justify-between px-1">
           <Link href="/admin" className="group flex flex-col">
             <span className="font-serif text-xl font-bold tracking-tight text-foreground transition-colors group-hover:text-primary">
@@ -38,32 +38,73 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Executive Portal
             </span>
           </Link>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+          <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary text-[10px] font-medium">
             {role}
-          </span>
+          </Badge>
         </div>
 
         <AdminNav role={role} />
 
-        <div className="mt-auto border-t border-border pt-4 px-1">
-          <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+        {/* Sidebar Bottom: User Profile & 1-Click Sign Out */}
+        <div className="mt-auto border-t border-border/70 pt-4 px-1 space-y-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-xl bg-primary/15 text-xs font-serif font-bold text-primary border border-primary/20">
               {session.user.name?.[0] ?? session.user.email[0].toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground">
+              <p className="truncate text-xs font-semibold text-foreground">
                 {session.user.name ?? "Administrator"}
               </p>
               <p className="truncate text-[11px] text-muted-foreground">{session.user.email}</p>
             </div>
           </div>
+
+          <SignOutButton
+            variant="outline"
+            size="sm"
+            className="w-full justify-center text-xs h-8 text-muted-foreground hover:text-destructive hover:border-destructive/40"
+          />
         </div>
       </aside>
-      <main id="admin-content" tabIndex={-1} className="flex-1 overflow-x-auto p-6 lg:p-10 focus:outline-none">
-        <div className="mx-auto max-w-7xl">
-          {children}
-        </div>
-      </main>
+
+      {/* Main Content Area with Top Executive Header */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border/70 bg-card/90 px-6 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-mono font-medium text-muted-foreground hidden sm:inline">
+                Atelier System Active
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+              <Link href="/shop" target="_blank" rel="noopener noreferrer">
+                <Store className="size-3.5" />
+                <span className="hidden sm:inline">View Boutique</span>
+                <ExternalLink className="size-2.5 opacity-60" />
+              </Link>
+            </Button>
+
+            <SignOutButton
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs text-muted-foreground hover:text-destructive"
+            />
+          </div>
+        </header>
+
+        <main id="admin-content" tabIndex={-1} className="flex-1 overflow-x-auto p-6 lg:p-10 focus:outline-none">
+          <div className="mx-auto max-w-7xl">
+            {children}
+          </div>
+        </main>
+      </div>
+
+      {/* Floating AI Co-Pilot Assistant */}
+      <AdminAiCopilot />
     </div>
   );
 }
