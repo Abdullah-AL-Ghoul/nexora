@@ -25,16 +25,8 @@ export default async function LoginPage({
   const safeRedirect = raw.startsWith("/") && !raw.startsWith("//") ? raw : "";
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2 text-center">
-        <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground">
-          Welcome Back
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Sign in to access your curated orders, wishlist, and private offers.
-        </p>
-      </div>
-      <Suspense fallback={<div className="h-48 flex items-center justify-center text-xs text-muted-foreground">Loading login form…</div>}>
+    <div className="w-full">
+      <Suspense fallback={<div className="h-64 flex items-center justify-center text-xs text-muted-foreground">Loading atelier portal…</div>}>
         <LoginForm redirectTo={safeRedirect} />
       </Suspense>
     </div>
