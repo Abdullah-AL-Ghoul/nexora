@@ -93,7 +93,9 @@ export async function POST(request: Request) {
 
     if (env.STRIPE_SECRET_KEY) {
       try {
-        const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+        const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+          httpClient: Stripe.createFetchHttpClient(),
+        });
         const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
         const proto = request.headers.get("x-forwarded-proto") || "https";
         const defaultUrl = getPublicEnv().NEXT_PUBLIC_APP_URL || "https://nexora-luxury.vercel.app";
