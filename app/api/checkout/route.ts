@@ -112,10 +112,11 @@ export async function POST(request: Request) {
         params.append("success_url", `${appUrl}/account/orders/${order.id}?placed=1`);
         params.append("cancel_url", `${appUrl}/checkout?cancelled=1`);
 
+        const stripeSecret = env.STRIPE_SECRET_KEY.replace(/[\uFEFF\r\n\s]/g, "");
         const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+            Authorization: `Bearer ${stripeSecret}`,
             "Content-Type": "application/x-www-form-urlencoded",
             "Idempotency-Key": stripeIdempotencyKey,
           },
