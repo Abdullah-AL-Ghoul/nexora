@@ -11,7 +11,7 @@ import { getServerEnv } from "@/lib/env";
  * - Signature verified manually (HMAC-SHA256 over `t.payload`, constant-time).
  * - Idempotent: every event id is claimed in WebhookEvent before handling;
  *   a failed handler releases the claim so Stripe's retry can reprocess.
- * - Fulfillment (stock decrement) happens ONLY here (or the local mock),
+ * - Fulfillment (stock decrement) happens ONLY here,
  *   never at order creation.
  */
 

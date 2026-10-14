@@ -34,6 +34,8 @@ export const auth = betterAuth({
   },
   trustedOrigins: [
     new URL(getPublicEnv().NEXT_PUBLIC_APP_URL).origin,
+    "https://nexora-luxury.vercel.app",
+    "https://nexora-iota-bice.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",

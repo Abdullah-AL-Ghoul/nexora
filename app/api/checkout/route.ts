@@ -9,10 +9,10 @@ import { clientIp, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { checkoutSchema } from "@/lib/validators/checkout";
 
 /**
- * POST /api/checkout — creates a PENDING order from a fresh server quote.
- * - With STRIPE_SECRET_KEY: starts a hosted Stripe Checkout session (redirect URL).
- * - Without: returns `{ mock: true }` so the local mock payment flow can run.
- * Totals/address/stock are all recomputed on the server (strict zod, no money fields).
+ * POST /api/checkout — creates an order from a verified server quote.
+ * - PaymentMethod "card": initializes a secure hosted Stripe Checkout session.
+ * - PaymentMethod "cod": creates an active order with Cash on Delivery.
+ * Totals/address/stock are recomputed on the server (strict zod, no client money tampering).
  */
 export async function POST(request: Request) {
   const limit = rateLimit(`checkout:${clientIp(request)}`, 10, 60_000);
@@ -94,7 +94,11 @@ export async function POST(request: Request) {
     if (env.STRIPE_SECRET_KEY) {
       try {
         const stripe = new Stripe(env.STRIPE_SECRET_KEY);
-        const appUrl = getPublicEnv().NEXT_PUBLIC_APP_URL;
+        const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+        const proto = request.headers.get("x-forwarded-proto") || "https";
+        const defaultUrl = getPublicEnv().NEXT_PUBLIC_APP_URL || "https://nexora-luxury.vercel.app";
+        const appUrl = (host ? `${proto}://${host}` : defaultUrl).replace(/\/$/, "");
+
         // Same key across retries of this attempt — Stripe returns the same
         // session instead of creating duplicates.
         const stripeIdempotencyKey = `checkout-${parsed.data.idempotencyKey ?? order.id}`;
@@ -143,8 +147,10 @@ export async function POST(request: Request) {
         // not linger (and does not block this cart's idempotency retry).
         console.error("stripe checkout session failed", error);
         await cancelPendingOrder(order.id).catch(() => undefined);
+        const errorMessage =
+          error instanceof Error ? error.message : "Card payment processing encountered a network error.";
         return NextResponse.json(
-          { error: "Card payment processing encountered a network error. Please try again or select Cash on Delivery." },
+          { error: errorMessage },
           { status: 502 }
         );
       }

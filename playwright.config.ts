@@ -23,7 +23,6 @@ export default defineConfig({
     timeout: 180_000,
     reuseExistingServer: false,
     env: {
-      NEXORA_MOCK_PAY: "1",
       // Align the app URL with the test origin so better-auth's
       // trustedOrigins check accepts sign-in requests from :3100.
       NEXT_PUBLIC_APP_URL: "http://localhost:3100",

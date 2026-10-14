@@ -14,7 +14,7 @@ import type { CheckoutInput } from "@/lib/validators/checkout";
  *
  * Money rules:
  * - createOrder re-prices everything server-side (client totals never trusted).
- * - markOrderPaid is the ONLY place stock is decremented (webhook / mock pay),
+ * - markOrderPaid is the ONLY place stock is decremented (Stripe webhook / verified settlement),
  *   and it is idempotent: the PENDING → PAID claim happens once per order.
  * - Fulfillment/cancellation/refund all revalidate the public catalog cache:
  *   stock and best-seller data feed storefront pages.

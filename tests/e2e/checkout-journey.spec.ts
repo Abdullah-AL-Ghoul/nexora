@@ -37,18 +37,19 @@ test("customer checkout journey ends with a PAID order", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /cart/i })).toBeVisible();
   await expect(page.getByText("Classic Leather Sneakers").first()).toBeVisible();
 
-  // Checkout: fill the form and place the order (mock payment path)
+  // Checkout: fill the form and place the order with Cash on Delivery
   await page.goto("/checkout");
   await page.getByRole("textbox", { name: "Full name" }).fill("E2E Customer");
   await page.getByRole("textbox", { name: "Address line 1" }).fill("1 Test Way");
   await page.getByRole("textbox", { name: "City" }).fill("Cairo");
   await page.getByRole("textbox", { name: "Postal code" }).fill("12345");
   await page.getByRole("textbox", { name: "Country" }).fill("Egypt");
+  await page.getByText(/Cash on Delivery/i).click();
   await page.getByRole("button", { name: /place order|pay|checkout/i }).click();
 
-  // Mock flow lands on the order page with a settled status
+  // Lands on the order page with a confirmed order
   await expect(page).toHaveURL(/\/account\/orders\//, { timeout: 30_000 });
-  await expect(page.getByText(/paid|processing/i).first()).toBeVisible();
+  await expect(page.getByText(/placed|pending|processing/i).first()).toBeVisible();
 
   // Order history lists it
   await page.goto("/account/orders");

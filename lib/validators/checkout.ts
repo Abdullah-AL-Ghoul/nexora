@@ -54,12 +54,6 @@ export const checkoutFormSchema = z
   })
   .strict();
 
-/** Body for the mock payment endpoint (local/dev only). */
-export const mockPaySchema = z
-  .object({
-    orderId: z.string().min(1).max(40),
-  })
-  .strict();
 
 export type AddressInput = z.infer<typeof addressSchema>;
 export type CheckoutInput = z.infer<typeof checkoutSchema>;

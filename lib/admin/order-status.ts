@@ -2,7 +2,7 @@ import type { OrderStatus } from "@/lib/generated/prisma/enums";
 
 /**
  * Staff-driven order status transitions. Payment (PENDING → SUCCEEDED) and
- * the initial PAID state are webhook/mock only — staff move orders forward
+ * the initial PAID state are handled via Stripe webhook settlement — staff move orders forward
  * (or cancel/refund) from here.
  */
 
