@@ -14,3 +14,8 @@ skills-lock.json
 coverage
 test-results
 playwright-report
+tests
+scripts
+*.log
+*.tsbuildinfo
+.env*
