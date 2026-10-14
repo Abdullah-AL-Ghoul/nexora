@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 
 import { getSession } from "@/lib/auth/guards";
 import { cancelPendingOrder, createOrder } from "@/lib/checkout/orders";
@@ -93,35 +92,47 @@ export async function POST(request: Request) {
 
     if (env.STRIPE_SECRET_KEY) {
       try {
-        const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-          httpClient: Stripe.createFetchHttpClient(),
-        });
         const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
         const proto = request.headers.get("x-forwarded-proto") || "https";
         const defaultUrl = getPublicEnv().NEXT_PUBLIC_APP_URL || "https://nexora-luxury.vercel.app";
         const appUrl = (host ? `${proto}://${host}` : defaultUrl).replace(/\/$/, "");
 
-        // Same key across retries of this attempt — Stripe returns the same
-        // session instead of creating duplicates.
         const stripeIdempotencyKey = `checkout-${parsed.data.idempotencyKey ?? order.id}`;
-        const checkoutSession = await stripe.checkout.sessions.create(
-          {
-            mode: "payment",
-            client_reference_id: order.id,
-            metadata: { orderId: order.id },
-            line_items: order.items.map((item) => ({
-              quantity: item.quantity,
-              price_data: {
-                currency: "usd",
-                unit_amount: item.unitPrice,
-                product_data: { name: item.name },
-              },
-            })),
-            success_url: `${appUrl}/account/orders/${order.id}?placed=1`,
-            cancel_url: `${appUrl}/checkout?cancelled=1`,
+
+        const params = new URLSearchParams();
+        params.append("mode", "payment");
+        params.append("client_reference_id", order.id);
+        params.append("metadata[orderId]", order.id);
+        order.items.forEach((item, index) => {
+          params.append(`line_items[${index}][quantity]`, String(item.quantity));
+          params.append(`line_items[${index}][price_data][currency]`, "usd");
+          params.append(`line_items[${index}][price_data][unit_amount]`, String(item.unitPrice));
+          params.append(`line_items[${index}][price_data][product_data][name]`, item.name);
+        });
+        params.append("success_url", `${appUrl}/account/orders/${order.id}?placed=1`);
+        params.append("cancel_url", `${appUrl}/checkout?cancelled=1`);
+
+        const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Idempotency-Key": stripeIdempotencyKey,
           },
-          { idempotencyKey: stripeIdempotencyKey }
-        );
+          body: params.toString(),
+        });
+
+        const checkoutSession = (await stripeRes.json()) as {
+          url?: string;
+          payment_intent?: string | { id?: string };
+          error?: { message?: string };
+        };
+
+        if (!stripeRes.ok || !checkoutSession.url) {
+          throw new Error(
+            checkoutSession.error?.message || "Failed to create secure checkout session with Stripe."
+          );
+        }
 
         // Link the PaymentIntent so payment_intent.payment_failed /
         // charge.refunded webhooks can match this order.
