@@ -54,6 +54,33 @@ export async function POST(request: Request) {
     }
 
     const order = result.order;
+
+    // Auto-save address to patron profile if none exists yet for future 1-click checkout
+    try {
+      const existingAddr = await prisma.address.findFirst({
+        where: { userId: session.user.id },
+      });
+      if (!existingAddr) {
+        await prisma.address.create({
+          data: {
+            userId: session.user.id,
+            label: "Primary Shipping",
+            fullName: parsed.data.address.fullName,
+            line1: parsed.data.address.line1,
+            line2: parsed.data.address.line2 ?? null,
+            city: parsed.data.address.city,
+            region: parsed.data.address.region ?? null,
+            postalCode: parsed.data.address.postalCode,
+            country: parsed.data.address.country,
+            phone: parsed.data.address.phone ?? null,
+            isDefault: true,
+          },
+        });
+      }
+    } catch {
+      // Non-blocking error handling
+    }
+
     const env = getServerEnv();
 
     // Cash on Delivery (COD) path: order remains PENDING with payment provider "cod"

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Loader2, Lock, ShieldCheck, Tag, X } from "lucide-react";
+import { ArrowRight, Loader2, Lock, ShieldCheck, Tag, X, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -72,7 +72,24 @@ function newIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
-export function CheckoutForm({ userName }: { userName: string }) {
+export type SavedAddressProp = {
+  fullName: string;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  region?: string | null;
+  postalCode: string;
+  country: string;
+  phone?: string | null;
+};
+
+export function CheckoutForm({
+  userName,
+  savedAddress,
+}: {
+  userName: string;
+  savedAddress?: SavedAddressProp | null;
+}) {
   const router = useRouter();
   const items = useCartStore((state) => state.items);
   const hydrated = useCartStore((state) => state._hasHydrated);
@@ -150,14 +167,14 @@ export function CheckoutForm({ userName }: { userName: string }) {
   const form = useForm<CheckoutFormInput>({
     resolver: zodResolver(checkoutFormSchema),
     defaultValues: {
-      fullName: userName,
-      line1: "",
-      line2: "",
-      city: "",
-      region: "",
-      postalCode: "",
-      country: "",
-      phone: "",
+      fullName: savedAddress?.fullName || userName,
+      line1: savedAddress?.line1 || "",
+      line2: savedAddress?.line2 || "",
+      city: savedAddress?.city || "",
+      region: savedAddress?.region || "",
+      postalCode: savedAddress?.postalCode || "",
+      country: savedAddress?.country || "United States",
+      phone: savedAddress?.phone || "",
       shippingMethod: "standard",
       paymentMethod: "card",
       notes: "",
@@ -282,7 +299,35 @@ export function CheckoutForm({ userName }: { userName: string }) {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" noValidate>
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Shipping address</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-serif">Shipping address</CardTitle>
+              {savedAddress && (
+                <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <Sparkles className="size-3" />
+                  1-Click Ready
+                </span>
+              )}
+            </div>
+            {savedAddress ? (
+              <div className="mt-2.5 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-primary">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-3.5 shrink-0" />
+                  <span>
+                    Pre-filled from your saved <strong>Atelier Profile</strong>.
+                  </span>
+                </div>
+                <Link
+                  href="/account"
+                  className="font-medium underline underline-offset-2 hover:text-primary/80 shrink-0 text-[11px]"
+                >
+                  Manage in Profile
+                </Link>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter your delivery address below. It will be saved to your profile for 1-click purchases.
+              </p>
+            )}
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">

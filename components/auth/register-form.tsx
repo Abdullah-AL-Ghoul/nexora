@@ -52,7 +52,7 @@ export function RegisterForm() {
       return;
     }
     toast.success("Welcome to NEXORA Atelier! Your account has been registered.");
-    router.push("/account");
+    router.push("/shop");
     router.refresh();
   }
 
@@ -192,7 +192,7 @@ export function RegisterForm() {
       </motion.div>
 
       <motion.div variants={itemVariants} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-        <GoogleSignInButton callbackURL="/account" />
+        <GoogleSignInButton callbackURL="/shop" />
       </motion.div>
 
       <motion.p variants={itemVariants} className="text-center text-xs text-muted-foreground pt-2">

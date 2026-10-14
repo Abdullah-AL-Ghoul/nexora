@@ -6,7 +6,7 @@ export const metadata = { title: "Create account" };
 
 export default async function RegisterPage() {
   const session = await getSession();
-  if (session) redirect("/account");
+  if (session) redirect("/shop");
 
   return (
     <div className="space-y-6">
