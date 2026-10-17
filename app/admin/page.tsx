@@ -70,7 +70,7 @@ export default async function AdminDashboardPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground">
-              Command Center
+              Executive Dashboard
             </h1>
             <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary text-xs">
               <Sparkles className="mr-1 size-3" /> Live

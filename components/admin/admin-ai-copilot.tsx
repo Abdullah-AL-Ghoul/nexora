@@ -26,12 +26,18 @@ type ActionItem = {
   url?: string;
 };
 
+let messageCounter = 0;
+function nextMessageId(prefix: string): string {
+  messageCounter += 1;
+  return `${prefix}-${messageCounter}`;
+}
+
 type ChatMessage = {
   id: string;
   sender: "user" | "copilot";
   text: string;
   actions?: ActionItem[];
-  timestamp: Date;
+  time: string;
 };
 
 const INITIAL_PROMPTS = [
@@ -41,20 +47,22 @@ const INITIAL_PROMPTS = [
   "Analyze low stock pieces & restock priorities",
 ];
 
+const INITIAL_MESSAGES: ChatMessage[] = [
+  {
+    id: "init",
+    sender: "copilot",
+    text: "مرحباً بك في غرفة القيادة! أنا **المساعد الذكي التنفيذي (NEXORA AI Co-pilot)**.\n\nأنا متصل مباشرة بقاعدة بيانات متجرك ويمكنني فحص المخزون، تلخيص المبيعات، صياغة أوصاف المنتجات الفاخرة، ومساعدتك في إدارة المتجر بسرعة.",
+    actions: [
+      { label: "📊 فحص المخزون والقطع الناقصة", action: "query", url: "فحص المخزون" },
+      { label: "💼 تقرير المبيعات والإيرادات", action: "query", url: "تقرير المبيعات" },
+    ],
+    time: "Now",
+  },
+];
+
 export function AdminAiCopilot() {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "init",
-      sender: "copilot",
-      text: "مرحباً بك في غرفة القيادة! أنا **المساعد الذكي التنفيذي (NEXORA AI Co-pilot)**.\n\nأنا متصل مباشرة بقاعدة بيانات متجرك ويمكنني فحص المخزون، تلخيص المبيعات، صياغة أوصاف المنتجات الفاخرة، ومساعدتك في إدارة المتجر بسرعة.",
-      actions: [
-        { label: "📊 فحص المخزون والقطع الناقصة", action: "query", url: "فحص المخزون" },
-        { label: "💼 تقرير المبيعات والإيرادات", action: "query", url: "تقرير المبيعات" },
-      ],
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -69,11 +77,12 @@ export function AdminAiCopilot() {
     const textToSend = (queryText ?? input).trim();
     if (!textToSend || loading) return;
 
+    const currentTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: nextMessageId("user"),
       sender: "user",
       text: textToSend,
-      timestamp: new Date(),
+      time: currentTime,
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -93,11 +102,11 @@ export function AdminAiCopilot() {
       }
 
       const botMsg: ChatMessage = {
-        id: `bot-${Date.now()}`,
+        id: nextMessageId("bot"),
         sender: "copilot",
         text: data.message,
         actions: data.actionItems,
-        timestamp: new Date(),
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err: unknown) {
@@ -106,10 +115,10 @@ export function AdminAiCopilot() {
       setMessages((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
+          id: nextMessageId("err"),
           sender: "copilot",
           text: `⚠️ عذراً، حدث خطأ أثناء معالجة الطلب: ${msg}`,
-          timestamp: new Date(),
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
     } finally {
@@ -239,10 +248,7 @@ export function AdminAiCopilot() {
                   )}
 
                   <div className="text-[9px] opacity-60 text-right">
-                    {new Date(m.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {m.time}
                   </div>
                 </div>
 

@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Loader2, Sparkles, Shield, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Loader2, Sparkles, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { loginSchema, type LoginInput } from "@/lib/validators/auth";
@@ -36,7 +36,6 @@ const itemVariants = {
 };
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -130,7 +129,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         {/* Email Input Field */}
         <motion.div variants={itemVariants} className="space-y-2">
           <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Patron Email
+            Email
           </Label>
           <div className="relative group">
             <Input
@@ -161,7 +160,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         <motion.div variants={itemVariants} className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Master Password
+              Password
             </Label>
             <Link
               href="/forgot-password"
@@ -182,7 +181,8 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={showPassword ? "Mask input" : "Reveal input"}
+              title={showPassword ? "Hide password" : "Show password"}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground/70 hover:text-foreground transition-colors"
             >
               <motion.div whileTap={{ scale: 0.85 }}>

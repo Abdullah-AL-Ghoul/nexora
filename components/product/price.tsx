@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { cn } from "cn";
 import { formatPrice, discountPercent } from "@/lib/format";
 import { useCurrency } from "@/components/currency/currency-provider";
+
+const emptySubscribe = () => () => {};
 
 export function Price({
   price,
@@ -17,15 +19,15 @@ export function Price({
   className?: string;
 }) {
   const { formatPrice: formatCustomPrice } = useCurrency();
-  const [mounted, setMounted] = useState(false);
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const displayPrice = mounted ? formatCustomPrice(price) : formatPrice(price);
+  const displayPrice = isHydrated ? formatCustomPrice(price) : formatPrice(price);
   const displayComparePrice = compareAtPrice
-    ? mounted
+    ? isHydrated
       ? formatCustomPrice(compareAtPrice)
       : formatPrice(compareAtPrice)
     : null;

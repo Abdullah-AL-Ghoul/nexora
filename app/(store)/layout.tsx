@@ -6,8 +6,10 @@ import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
 import { TopProgressBar } from "@/components/layout/top-progress-bar";
 import { getSession } from "@/lib/auth/guards";
 import { getWishlistCount } from "@/lib/queries/wishlist";
+import { getPublicEnv } from "@/lib/env";
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
+  const appUrl = getPublicEnv().NEXT_PUBLIC_APP_URL;
   const session = await getSession();
 
   const [wishlistCount] = session
@@ -23,8 +25,48 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       }
     : null;
 
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "NEXORA",
+    url: appUrl,
+    logo: `${appUrl}/icon.png`,
+    contactPoint: {
+      "@type": "ContactPoint",
+      contactType: "Customer Support",
+      availableLanguage: ["English"],
+    },
+  };
+
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "NEXORA",
+    url: appUrl,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${appUrl}/search?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(organizationJsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(websiteJsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"

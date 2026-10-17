@@ -266,7 +266,7 @@ export function CartDrawer() {
                 </Link>
               </Button>
               <Button asChild variant="outline" size="sm" className="w-full" onClick={closeDrawer}>
-                <Link href="/cart">View Full Cart & Apply Coupon</Link>
+                <Link href="/cart">View Cart ({itemCount})</Link>
               </Button>
             </div>
           </div>

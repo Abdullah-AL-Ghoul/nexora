@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Calendar, Clock, Phone, Mail, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Sparkles, CheckCircle2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";

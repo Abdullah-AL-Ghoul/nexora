@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useTransition } from "react";
+import React, { createContext, useContext, useTransition } from "react";
 import {
   CURRENCIES,
   DEFAULT_CURRENCY,
@@ -23,30 +23,52 @@ const CurrencyContext = createContext<CurrencyContextValue>({
 });
 
 const STORAGE_KEY = "nexora_selected_currency";
+const listeners = new Set<() => void>();
+
+function emitCurrencyChange() {
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+function subscribe(callback: () => void) {
+  listeners.add(callback);
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY) callback();
+  };
+  window.addEventListener("storage", handleStorage);
+  return () => {
+    listeners.delete(callback);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
+function getSnapshot(): SupportedCurrency {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY) as SupportedCurrency | null;
+    if (saved && saved in CURRENCIES) return saved;
+  } catch {
+    // Storage unavailable
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function getServerSnapshot(): SupportedCurrency {
+  return DEFAULT_CURRENCY;
+}
 
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
-  const [currency, setCurrencyState] = useState<SupportedCurrency>(DEFAULT_CURRENCY);
+  const currency = React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY) as SupportedCurrency | null;
-      if (saved && saved in CURRENCIES) {
-        setCurrencyState(saved);
-      }
-    } catch {
-      // Storage unavailable or disabled
-    }
-  }, []);
 
   const setCurrency = (nextCurrency: SupportedCurrency) => {
     startTransition(() => {
-      setCurrencyState(nextCurrency);
       try {
         localStorage.setItem(STORAGE_KEY, nextCurrency);
       } catch {
         // Storage unavailable
       }
+      emitCurrencyChange();
     });
   };
 

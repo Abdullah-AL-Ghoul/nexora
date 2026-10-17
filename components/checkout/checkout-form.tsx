@@ -388,116 +388,131 @@ export function CheckoutForm({
           </CardHeader>
 
           <CardContent className="pt-5 space-y-5">
-            {savedAddress ? (
-              <div className="space-y-4">
-                {/* Saved Address Selection Toggle */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setAddressMode("saved")}
-                    className={`flex flex-col items-start gap-1.5 rounded-xl border p-4 text-left transition-all ${
-                      addressMode === "saved"
-                        ? "border-primary bg-primary/[0.04] ring-1 ring-primary shadow-sm"
-                        : "border-border/80 hover:border-primary/40 bg-card"
-                    }`}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5">
-                        <CheckCircle2 className="size-3.5" /> Saved Atelier Address
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">Default</span>
-                    </div>
-                    <p className="font-medium text-sm text-foreground mt-1">{savedAddress.fullName}</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {savedAddress.line1}
-                      {savedAddress.line2 ? `, ${savedAddress.line2}` : ""}
-                      <br />
-                      {savedAddress.city}, {savedAddress.postalCode} · {savedAddress.country}
-                    </p>
-                    {savedAddress.phone && (
-                      <p className="text-[11px] text-muted-foreground/80 mt-0.5">
-                        Tel: {savedAddress.phone}
-                      </p>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAddressMode("custom")}
-                    className={`flex flex-col items-start justify-center gap-1.5 rounded-xl border p-4 text-left transition-all ${
-                      addressMode === "custom"
-                        ? "border-primary bg-primary/[0.04] ring-1 ring-primary shadow-sm"
-                        : "border-border/80 hover:border-primary/40 bg-card"
-                    }`}
-                  >
-                    <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      Deliver to a Different Address
-                    </span>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                      Enter an alternative villa, office, hotel suite, or international residence.
-                    </p>
-                  </button>
+            {savedAddress && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/[0.04] p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-primary shrink-0" />
+                  <span className="text-foreground">
+                    Pre-filled with your saved address: <strong>{savedAddress.fullName}</strong> ({savedAddress.line1}, {savedAddress.city})
+                  </span>
                 </div>
-
-                {addressMode === "saved" && (
-                  <p className="text-xs text-muted-foreground flex items-center justify-between px-1">
-                    <span>Your package will be delivered directly to this primary address.</span>
-                    <Link
-                      href="/account"
-                      className="text-primary hover:underline font-medium text-[11px]"
-                    >
-                      Edit in Profile →
-                    </Link>
-                  </p>
-                )}
-              </div>
-            ) : null}
-
-            {/* Custom / Manual Form Fields */}
-            {(addressMode === "custom" || !savedAddress) && (
-              <div className="grid gap-4 sm:grid-cols-2 pt-1 border-t border-border/50">
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="fullName" className="text-xs font-medium">Full Name *</Label>
-                  <Input id="fullName" autoComplete="name" {...form.register("fullName")} placeholder="Lord / Lady / Mr. John Doe" />
-                  <FieldError message={form.formState.errors.fullName?.message} />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="line1" className="text-xs font-medium">Street Address / Residence *</Label>
-                  <Input id="line1" autoComplete="address-line1" {...form.register("line1")} placeholder="Apartment, suite, building, street" />
-                  <FieldError message={form.formState.errors.line1?.message} />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="line2" className="text-xs font-medium">Floor / Villa / Gate Code (optional)</Label>
-                  <Input id="line2" autoComplete="address-line2" {...form.register("line2")} placeholder="Floor 14, Penthouse 4B" />
-                  <FieldError message={form.formState.errors.line2?.message} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="city" className="text-xs font-medium">City *</Label>
-                  <Input id="city" autoComplete="address-level2" {...form.register("city")} placeholder="Dubai / London / New York" />
-                  <FieldError message={form.formState.errors.city?.message} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="region" className="text-xs font-medium">State / Emirate / County</Label>
-                  <Input id="region" autoComplete="address-level1" {...form.register("region")} placeholder="Dubai" />
-                  <FieldError message={form.formState.errors.region?.message} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="postalCode" className="text-xs font-medium">Postal Code *</Label>
-                  <Input id="postalCode" autoComplete="postal-code" {...form.register("postalCode")} placeholder="00000" />
-                  <FieldError message={form.formState.errors.postalCode?.message} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="country" className="text-xs font-medium">Country / Region *</Label>
-                  <Input id="country" autoComplete="country-name" {...form.register("country")} placeholder="United Arab Emirates" />
-                  <FieldError message={form.formState.errors.country?.message} />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="phone" className="text-xs font-medium">Mobile Phone (For courier updates)</Label>
-                  <Input id="phone" type="tel" autoComplete="tel" {...form.register("phone")} placeholder="+971 50 000 0000" />
-                  <FieldError message={form.formState.errors.phone?.message} />
-                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-primary hover:text-primary"
+                  onClick={() => {
+                    form.reset({
+                      ...form.getValues(),
+                      fullName: savedAddress.fullName,
+                      line1: savedAddress.line1,
+                      line2: savedAddress.line2 || "",
+                      city: savedAddress.city,
+                      region: savedAddress.region || "",
+                      postalCode: savedAddress.postalCode,
+                      country: savedAddress.country,
+                      phone: savedAddress.phone || "",
+                    });
+                    toast.success("Restored saved address details");
+                  }}
+                >
+                  Reset to Saved
+                </Button>
               </div>
             )}
+
+            {/* Address Form Fields */}
+            <div className="grid gap-4 sm:grid-cols-2 pt-1">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="fullName" className="text-xs font-medium">Full name</Label>
+                <Input
+                  id="fullName"
+                  aria-label="Full name"
+                  autoComplete="name"
+                  {...form.register("fullName")}
+                  placeholder="Lord / Lady / Mr. John Doe"
+                />
+                <FieldError message={form.formState.errors.fullName?.message} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="line1" className="text-xs font-medium">Address line 1</Label>
+                <Input
+                  id="line1"
+                  aria-label="Address line 1"
+                  autoComplete="address-line1"
+                  {...form.register("line1")}
+                  placeholder="Apartment, suite, building, street"
+                />
+                <FieldError message={form.formState.errors.line1?.message} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="line2" className="text-xs font-medium">Address line 2 (optional)</Label>
+                <Input
+                  id="line2"
+                  aria-label="Address line 2"
+                  autoComplete="address-line2"
+                  {...form.register("line2")}
+                  placeholder="Floor 14, Penthouse 4B"
+                />
+                <FieldError message={form.formState.errors.line2?.message} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="city" className="text-xs font-medium">City</Label>
+                <Input
+                  id="city"
+                  aria-label="City"
+                  autoComplete="address-level2"
+                  {...form.register("city")}
+                  placeholder="Dubai / London / New York"
+                />
+                <FieldError message={form.formState.errors.city?.message} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="region" className="text-xs font-medium">State / Region</Label>
+                <Input
+                  id="region"
+                  aria-label="State or Region"
+                  autoComplete="address-level1"
+                  {...form.register("region")}
+                  placeholder="State / Province"
+                />
+                <FieldError message={form.formState.errors.region?.message} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="postalCode" className="text-xs font-medium">Postal code</Label>
+                <Input
+                  id="postalCode"
+                  aria-label="Postal code"
+                  autoComplete="postal-code"
+                  {...form.register("postalCode")}
+                  placeholder="00000"
+                />
+                <FieldError message={form.formState.errors.postalCode?.message} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="country" className="text-xs font-medium">Country</Label>
+                <Input
+                  id="country"
+                  aria-label="Country"
+                  autoComplete="country-name"
+                  {...form.register("country")}
+                  placeholder="United States"
+                />
+                <FieldError message={form.formState.errors.country?.message} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="phone" className="text-xs font-medium">Phone</Label>
+                <Input
+                  id="phone"
+                  aria-label="Phone"
+                  type="tel"
+                  autoComplete="tel"
+                  {...form.register("phone")}
+                  placeholder="+1 555 000 0000"
+                />
+                <FieldError message={form.formState.errors.phone?.message} />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -691,8 +706,8 @@ export function CheckoutForm({
             ) : (
               <span className="flex items-center justify-center gap-2">
                 {paymentMethod === "cod"
-                  ? "Confirm Order with Cash on Delivery"
-                  : `Authorize Payment · ${formatPrice(total)}`}
+                  ? "Place Order with Cash on Delivery"
+                  : `Place Order & Pay · ${formatPrice(total)}`}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </span>
             )}
