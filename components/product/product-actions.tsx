@@ -15,6 +15,7 @@ import { ConciergeDialog } from "@/components/concierge/concierge-dialog";
 export type ProductActionsProduct = {
   id: string;
   name: string;
+  slug: string;
   price: number;
   stock: number;
 };
@@ -111,7 +112,7 @@ export function ProductActions({
       </div>
 
       <div className="flex items-center justify-between border-t border-border/60 pt-3">
-        <ConciergeDialog productName={product.name} />
+        <ConciergeDialog productName={product.name} productSlug={product.slug} />
         <span className="text-[11px] text-muted-foreground tracking-wide font-medium">
           Certified Atelier Guarantee
         </span>

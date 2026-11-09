@@ -7,6 +7,7 @@ import {
   ShoppingBag,
   Package,
   Users,
+  Sparkles,
   ExternalLink,
   ShieldCheck,
 } from "lucide-react";
@@ -17,6 +18,7 @@ const navItems: { href: string; label: string; roles: AppRole[]; icon: typeof La
   { href: "/admin", label: "Dashboard", roles: ["ADMIN", "MANAGER"], icon: LayoutDashboard },
   { href: "/admin/orders", label: "Orders", roles: ["ADMIN", "MANAGER"], icon: ShoppingBag },
   { href: "/admin/products", label: "Products", roles: ["ADMIN", "MANAGER"], icon: Package },
+  { href: "/admin/consultations", label: "Consultations", roles: ["ADMIN", "MANAGER"], icon: Sparkles },
   { href: "/admin/users", label: "Users & Roles", roles: ["ADMIN"], icon: Users },
 ];
 

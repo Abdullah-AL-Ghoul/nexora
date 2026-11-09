@@ -47,6 +47,12 @@ enum CouponType {
   FIXED
 }
 
+enum ConsultationStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
 enum InventoryReason {
   SEED
   PURCHASE
@@ -427,4 +433,23 @@ model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+}
+
+model ConsultationRequest {
+  id          String             @id @default(cuid())
+  fullName    String
+  email       String
+  phone       String
+  type        String
+  preferredDate DateTime?
+  notes       String?
+  productName String?
+  productSlug String?
+  status      ConsultationStatus @default(NEW)
+  adminNote   String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([email])
 }

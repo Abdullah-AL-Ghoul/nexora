@@ -18,8 +18,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npx next dev -p 3100",
-    url: "http://localhost:3100",
+    // Wrapper compiles every spec-relevant route before signaling readiness,
+    // so tests never race Turbopack cold-start compilation.
+    command: "node scripts/e2e-server.mjs",
+    url: "http://localhost:3100/login",
     timeout: 180_000,
     reuseExistingServer: false,
     env: {
