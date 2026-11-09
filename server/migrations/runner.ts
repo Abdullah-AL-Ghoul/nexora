@@ -6,8 +6,12 @@ import {
   type MigrationResult,
   type MigrationRunnerOptions,
   BaselineMismatchError,
+  MigrationBackupError,
   MigrationChecksumError,
+  MigrationError,
   MigrationExecutionError,
+  MigrationLockError,
+  MigrationRegistryError,
 } from './types.js';
 import { MigrationLock } from './lock.js';
 import { createWalSafeBackup, pruneOldBackups } from './backup.js';
@@ -18,25 +22,160 @@ export const REGISTERED_MIGRATIONS: Migration[] = [migration001, migration002];
 
 /**
  * Resolves the filesystem path of the main SQLite database file from PRAGMA database_list.
- * Returns ':memory:' for in-memory databases.
+ * Returns ':memory:' ONLY for explicitly in-memory databases.
+ * Fails closed with MigrationError if the database location cannot be safely determined.
  */
 export function getDbLocation(db: DatabaseSync): string {
   try {
-    const list = (db.prepare('PRAGMA database_list;').all() as any[]) ?? [];
-    const main = list.find((item) => item.name === 'main');
-    if (main && main.file && typeof main.file === 'string' && main.file.length > 0) {
-      return main.file;
+    const list = db.prepare('PRAGMA database_list;').all() as any[];
+    if (!Array.isArray(list)) {
+      throw new MigrationError('PRAGMA database_list returned non-array result');
     }
-  } catch {
-    // fallback
+    const main = list.find((item) => item.name === 'main');
+    if (!main) {
+      throw new MigrationError('PRAGMA database_list does not contain "main" database entry');
+    }
+    if (typeof main.file !== 'string') {
+      throw new MigrationError(
+        `PRAGMA database_list "main" entry has non-string file property: ${typeof main.file}`
+      );
+    }
+    // In-memory databases report file === ''
+    if (main.file === '' || main.file === ':memory:') {
+      return ':memory:';
+    }
+    return main.file;
+  } catch (err: any) {
+    if (err instanceof MigrationError) throw err;
+    throw new MigrationError(`Unable to safely determine SQLite database location: ${err?.message}`, err);
   }
-  return ':memory:';
+}
+
+/**
+ * Validates the schema_migrations registry table and returns applied migrations.
+ * This function is strictly read-only and never executes DDL or modifies database state.
+ */
+export function validateMigrationRegistry(
+  db: DatabaseSync,
+  registeredMigrations: Migration[]
+): AppliedMigration[] {
+  // Check if schema_migrations table exists
+  const tableExists = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations';")
+    .get();
+
+  if (!tableExists) {
+    return [];
+  }
+
+  // 1. Validate schema_migrations columns and declared types
+  const cols = (db.prepare('PRAGMA table_info("schema_migrations");').all() as any[]) ?? [];
+  const requiredCols: Record<string, string> = {
+    version: 'INTEGER',
+    name: 'TEXT',
+    applied_at: 'TEXT',
+    checksum: 'TEXT',
+    execution_time_ms: 'INTEGER',
+  };
+
+  for (const [colName, expectedType] of Object.entries(requiredCols)) {
+    const col = cols.find((c) => c.name === colName);
+    if (!col) {
+      throw new MigrationRegistryError(`schema_migrations is missing required column "${colName}"`);
+    }
+    if ((col.type || '').toUpperCase() !== expectedType) {
+      throw new MigrationRegistryError(
+        `schema_migrations column "${colName}" has invalid type "${col.type}"; expected "${expectedType}"`
+      );
+    }
+  }
+
+  // 2. Fetch rows ordered by version ASC
+  const rows = (db
+    .prepare(
+      'SELECT version, name, applied_at, checksum, execution_time_ms FROM schema_migrations ORDER BY version ASC;'
+    )
+    .all() as any[]) ?? [];
+
+  const checksumRegex = /^[a-f0-9]{64}$/i;
+  const applied: AppliedMigration[] = [];
+  const seenVersions = new Set<number>();
+  const registeredMap = new Map<number, Migration>(registeredMigrations.map((m) => [m.version, m]));
+
+  let previousVersion = 0;
+
+  for (const row of rows) {
+    const version = Number(row.version);
+    const name = String(row.name);
+    const applied_at = String(row.applied_at);
+    const checksum = String(row.checksum);
+    const execution_time_ms = Number(row.execution_time_ms);
+
+    // Duplicate version check
+    if (seenVersions.has(version)) {
+      throw new MigrationRegistryError(`Duplicate migration version recorded in registry: ${version}`);
+    }
+    seenVersions.add(version);
+
+    // Checksum format check
+    if (!checksumRegex.test(checksum)) {
+      throw new MigrationRegistryError(
+        `Invalid checksum format recorded for migration version ${version}: "${checksum}" (expected 64-char hex SHA-256)`
+      );
+    }
+
+    // Unknown version check
+    const registered = registeredMap.get(version);
+    if (!registered) {
+      throw new MigrationRegistryError(
+        `Unknown migration version ${version} ("${name}") recorded in schema_migrations; not registered in runner`
+      );
+    }
+
+    // Name/version mismatch
+    if (name !== registered.name) {
+      throw new MigrationRegistryError(
+        `Migration version ${version} name mismatch: registry has "${name}", registered definition is "${registered.name}"`
+      );
+    }
+
+    // Historical checksum mismatch
+    if (checksum !== registered.checksum) {
+      throw new MigrationChecksumError(version, registered.checksum, checksum);
+    }
+
+    // Missing earlier version check (no gaps in applied versions)
+    if (version !== previousVersion + 1) {
+      throw new MigrationRegistryError(
+        `Missing earlier migration version: version ${version} is recorded, but expected version ${previousVersion + 1}`
+      );
+    }
+    previousVersion = version;
+
+    applied.push({
+      version,
+      name,
+      applied_at,
+      checksum,
+      execution_time_ms,
+    });
+  }
+
+  return applied;
+}
+
+/**
+ * Strictly read-only helper to inspect applied migrations without creating tables or modifying state.
+ */
+export function getAppliedMigrations(db: DatabaseSync): AppliedMigration[] {
+  return validateMigrationRegistry(db, REGISTERED_MIGRATIONS);
 }
 
 /**
  * Initializes schema_migrations table if not already present.
+ * MUST only be invoked after backup completion or on a verified fresh database.
  */
-function ensureMigrationRegistry(db: DatabaseSync): void {
+export function ensureMigrationRegistry(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version           INTEGER PRIMARY KEY,
@@ -46,25 +185,6 @@ function ensureMigrationRegistry(db: DatabaseSync): void {
       execution_time_ms INTEGER NOT NULL
     );
   `);
-}
-
-/**
- * Retrieves list of applied migrations from schema_migrations table.
- */
-export function getAppliedMigrations(db: DatabaseSync): AppliedMigration[] {
-  ensureMigrationRegistry(db);
-  const rows = db
-    .prepare(
-      'SELECT version, name, applied_at, checksum, execution_time_ms FROM schema_migrations ORDER BY version ASC;'
-    )
-    .all() as any[];
-  return rows.map((r) => ({
-    version: Number(r.version),
-    name: String(r.name),
-    applied_at: String(r.applied_at),
-    checksum: String(r.checksum),
-    execution_time_ms: Number(r.execution_time_ms),
-  }));
 }
 
 /**
@@ -78,18 +198,20 @@ export function getPhysicalTableCount(db: DatabaseSync): number {
 }
 
 /**
- * Executes versioned migrations safely and idempotently.
+ * Executes versioned migrations safely, atomically, and idempotently.
  *
  * Sequence:
- * 1. Inspects existing migration registry.
- * 2. Validates checksum of previously applied migrations.
- * 3. If pending migrations exist:
- *    - Acquires exclusive migration lock.
- *    - Creates WAL-safe backup (for file-backed databases).
- *    - Applies pending migrations inside atomic transactions.
- *    - Validates schema and physical table count.
- *    - Prunes older backups.
- *    - Releases migration lock.
+ * 1. Resolves database location safely (fails closed if path inspection fails).
+ * 2. Acquires exclusive migration lock before reading mutable state.
+ * 3. Inspects registry under lock; determines pending migrations.
+ * 4. If no pending migrations, returns immediate idempotent result.
+ * 5. If persistent database contains existing tables, creates and verifies WAL-safe backup.
+ *    (Fresh, completely empty database has explicit no-backup exception).
+ * 6. ONLY AFTER backup verification succeeds, provisions migration registry.
+ * 7. Executes pending migrations inside atomic transactions.
+ * 8. Verifies physical table counts and commits.
+ * 9. Prunes old backups only after migration verification.
+ * 10. Releases lock in finally.
  */
 export async function runMigrations(
   db: DatabaseSync,
@@ -99,43 +221,7 @@ export async function runMigrations(
   const dbLocation = getDbLocation(db);
   const isMemory = dbLocation === ':memory:' || dbLocation.startsWith(':memory:');
 
-  ensureMigrationRegistry(db);
-  const applied = getAppliedMigrations(db);
-  const appliedVersionMap = new Map<number, AppliedMigration>(applied.map((m) => [m.version, m]));
-
-  // Verify checksums of all previously applied migrations against registered definitions
-  for (const registered of REGISTERED_MIGRATIONS) {
-    const historical = appliedVersionMap.get(registered.version);
-    if (historical) {
-      if (historical.checksum !== registered.checksum) {
-        throw new MigrationChecksumError(
-          registered.version,
-          registered.checksum,
-          historical.checksum
-        );
-      }
-    }
-  }
-
-  // Determine pending migrations in strict numeric ascending order
-  const pending = REGISTERED_MIGRATIONS.filter((m) => !appliedVersionMap.has(m.version)).sort(
-    (a, b) => a.version - b.version
-  );
-
-  // If no pending migrations, return immediately (fast-path idempotency)
-  if (pending.length === 0) {
-    const currentVersion = applied.length > 0 ? Math.max(...applied.map((m) => m.version)) : 0;
-    return {
-      appliedCount: 0,
-      appliedVersions: [],
-      currentVersion,
-      totalTables: getPhysicalTableCount(db),
-      baselineCreated: false,
-      durationMs: Date.now() - startTime,
-    };
-  }
-
-  // Concurrency protection: acquire exclusive migration lock
+  // Concurrency protection: acquire exclusive migration lock BEFORE checking pending migrations
   const shouldLock = options.lock !== false;
   const lock = shouldLock ? new MigrationLock(dbLocation) : null;
   if (lock) {
@@ -145,14 +231,43 @@ export async function runMigrations(
   let backupPath: string | undefined;
 
   try {
-    // WAL-safe backup creation for file-backed databases before executing DDL
+    // Re-read migration state while holding the lock
+    const applied = getAppliedMigrations(db);
+    const appliedVersionMap = new Map<number, AppliedMigration>(applied.map((m) => [m.version, m]));
+
+    // Determine pending migrations in strict numeric ascending order
+    const pending = REGISTERED_MIGRATIONS.filter((m) => !appliedVersionMap.has(m.version)).sort(
+      (a, b) => a.version - b.version
+    );
+
+    // Fast-path idempotency: if another process or prior run applied all migrations, return immediately
+    if (pending.length === 0) {
+      const currentVersion = applied.length > 0 ? Math.max(...applied.map((m) => m.version)) : 0;
+      return {
+        appliedCount: 0,
+        appliedVersions: [],
+        currentVersion,
+        totalTables: getPhysicalTableCount(db),
+        baselineCreated: false,
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    // Backup ordering enforcement:
+    // If a persistent file-backed database already contains tables (legacy application state or previous migrations),
+    // a verified WAL-safe backup MUST precede any DDL, DML, or registry creation.
+    const existingTableCount = getPhysicalTableCount(db);
     const shouldBackup = options.backup !== false && !isMemory;
-    if (shouldBackup) {
+
+    if (shouldBackup && existingTableCount > 0) {
       const backupResult = await createWalSafeBackup(db, dbLocation, pending[0].version);
       if (backupResult) {
         backupPath = backupResult.backupPath;
       }
     }
+
+    // Only after backup success (or fresh empty database exception) may registry or tables be created
+    ensureMigrationRegistry(db);
 
     const appliedVersions: number[] = [];
     let baselineCreated = false;
@@ -196,7 +311,13 @@ export async function runMigrations(
         } catch {
           // Ignore rollback error if transaction already failed
         }
-        if (err instanceof BaselineMismatchError || err instanceof MigrationChecksumError) {
+        if (
+          err instanceof BaselineMismatchError ||
+          err instanceof MigrationChecksumError ||
+          err instanceof MigrationRegistryError ||
+          err instanceof MigrationBackupError ||
+          err instanceof MigrationLockError
+        ) {
           throw err;
         }
         throw new MigrationExecutionError(migration.version, migration.name, err.message, err);

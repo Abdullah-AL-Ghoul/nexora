@@ -34,7 +34,7 @@ export interface MigrationRunnerOptions {
 // ─── Custom Typed Errors ───────────────────────────────────────────────────────
 
 export class MigrationError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public readonly cause?: unknown) {
     super(message);
     this.name = 'MigrationError';
   }
@@ -83,5 +83,12 @@ export class MigrationExecutionError extends MigrationError {
   ) {
     super(`Migration ${version} (${migrationName}) failed: ${message}`);
     this.name = 'MigrationExecutionError';
+  }
+}
+
+export class MigrationRegistryError extends MigrationError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MigrationRegistryError';
   }
 }

@@ -15,6 +15,15 @@ const memoryLocks = new Set<string>();
 /**
  * MigrationLock provides exclusive acquisition, bounded waiting, and safe release
  * for database migration execution.
+ *
+ * Governance:
+ * 1. Lock acquisition uses exclusive file creation ('wx').
+ * 2. Locks are NEVER removed solely because of age.
+ * 3. Active processes on the same host are never considered stale.
+ * 4. Stale removal is permitted ONLY for confirmed dead PIDs on the same host (ESRCH),
+ *    with pre-deletion content verification to prevent race conditions.
+ * 5. Foreign host locks, uncertain ownership, or malformed lock data fail closed.
+ * 6. Release is verified to ensure only the owning process can delete the lock file.
  */
 export class MigrationLock {
   private readonly lockFilePath: string | null;
@@ -64,7 +73,7 @@ export class MigrationLock {
   }
 
   /**
-   * Release the lock if currently held.
+   * Release the lock if currently held by this process.
    */
   release(): void {
     if (!this.acquired) return;
@@ -117,18 +126,86 @@ export class MigrationLock {
       return true;
     } catch (err: any) {
       if (err?.code === 'EEXIST') {
-        // Check for stale lock: if same host and process is dead, or lock is older than 15 minutes
-        if (this.isLockStale()) {
-          try {
-            fs.unlinkSync(this.lockFilePath);
-            return false; // Will re-try on next loop iteration
-          } catch {
-            return false;
-          }
-        }
+        // Inspect lock file for staleness under strict safety rules
+        this.handleExistingLockFile();
         return false;
       }
       throw new MigrationLockError(`Filesystem error acquiring lock at ${this.lockFilePath}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handles an existing lock file.
+   * Stale removal is ONLY permitted if the process is confirmed dead on the SAME host (ESRCH),
+   * and the lock content has not changed since inspection.
+   * If foreign host, uncertain ownership, malformed data, or process is alive, fails closed (no deletion).
+   */
+  private handleExistingLockFile(): void {
+    if (!this.lockFilePath || !fs.existsSync(this.lockFilePath)) {
+      return;
+    }
+
+    let rawContent: string;
+    try {
+      rawContent = fs.readFileSync(this.lockFilePath, 'utf8');
+    } catch {
+      return;
+    }
+
+    let owner: LockInfo;
+    try {
+      owner = JSON.parse(rawContent);
+    } catch {
+      // Malformed lock data: fail closed (do NOT delete automatically)
+      return;
+    }
+
+    if (
+      typeof owner?.pid !== 'number' ||
+      typeof owner?.hostname !== 'string' ||
+      typeof owner?.acquiredAt !== 'string'
+    ) {
+      // Uncertain or malformed schema: fail closed
+      return;
+    }
+
+    // Foreign host: ownership cannot be safely verified locally -> fail closed
+    if (owner.hostname !== os.hostname()) {
+      return;
+    }
+
+    // Same host: test if process exists using process.kill(pid, 0)
+    let isAlive = false;
+    try {
+      process.kill(owner.pid, 0);
+      isAlive = true;
+    } catch (e: any) {
+      if (e.code === 'EPERM') {
+        // Process exists (permission denied to signal) -> active!
+        isAlive = true;
+      } else if (e.code === 'ESRCH') {
+        // Process does not exist -> confirmed dead!
+        isAlive = false;
+      } else {
+        // Uncertain error -> fail closed
+        isAlive = true;
+      }
+    }
+
+    // Rule: Never remove a lock solely because it is old if owner is alive
+    if (isAlive) {
+      return;
+    }
+
+    // Owning process is confirmed dead (ESRCH) on this host.
+    // Verify lock file has not changed since inspection before unlinking.
+    try {
+      const currentContent = fs.readFileSync(this.lockFilePath, 'utf8');
+      if (currentContent === rawContent) {
+        fs.unlinkSync(this.lockFilePath);
+      }
+    } catch {
+      // Ignore if unlinked by another connection
     }
   }
 
@@ -146,26 +223,5 @@ export class MigrationLock {
     } catch {
       return null;
     }
-  }
-
-  private isLockStale(): boolean {
-    const owner = this.readLockOwner();
-    if (!owner) return true;
-
-    // If lock is from this exact host, verify if the process still exists
-    if (owner.hostname === os.hostname() && owner.pid) {
-      try {
-        // process.kill(pid, 0) tests if process exists without sending a signal
-        process.kill(owner.pid, 0);
-        // Process is still running, check age
-        const ageMs = Date.now() - new Date(owner.acquiredAt).getTime();
-        return ageMs > 15 * 60 * 1000; // 15 minutes max lifespan for migration
-      } catch (e: any) {
-        // ESRCH means process does not exist -> stale!
-        if (e.code === 'ESRCH') return true;
-      }
-    }
-
-    return false;
   }
 }

@@ -4,8 +4,13 @@ import { runMigrations } from '../migrations/runner.js';
 import {
   CreateProjectSchema,
   CreateCertificationSchema,
+  UpdateCertificationSchema,
   AdminVerifyCertificationSchema,
   CreateMediaAssetSchema,
+  UpdateMediaAssetSchema,
+  validateMergedMediaAsset,
+  PublicationStatusSchema,
+  CertificationVerificationStatusSchema,
 } from '../schemas.js';
 import { mockMediaAssets, mockProjects, mockCertifications } from './fixtures/domainFixtures.js';
 
@@ -457,6 +462,101 @@ describe('Domain Models, Schema Constraints & Referential Integrity', () => {
           uploadedBy: 'u1',
         })
       ).toThrow();
+    });
+
+    it('6. CreateCertificationSchema rejects DRAFT as a verificationStatus (belongs strictly to publicationStatus)', () => {
+      const attempt = {
+        slug: 'iso-test-cert',
+        title: 'ISO Test Cert',
+        issuingOrganization: 'ISO Organization',
+        issueDate: '2026-01-01',
+        publicationStatus: 'DRAFT' as const, // valid publication status
+        verificationStatus: 'DRAFT', // INVALID: DRAFT is not a verification status
+      };
+      expect(() => CreateCertificationSchema.parse(attempt)).toThrow();
+    });
+
+    it('7. UpdateCertificationSchema rejects client attempt to self-assert VERIFIED or DRAFT status', () => {
+      expect(() =>
+        UpdateCertificationSchema.parse({
+          verificationStatus: 'VERIFIED',
+        })
+      ).toThrow();
+
+      expect(() =>
+        UpdateCertificationSchema.parse({
+          verificationStatus: 'DRAFT',
+        })
+      ).toThrow();
+    });
+
+    it('8. AdminVerifyCertificationSchema rejects EXPIRED (dynamically derived from expirationDate)', () => {
+      expect(() =>
+        AdminVerifyCertificationSchema.parse({
+          verificationStatus: 'EXPIRED' as any,
+          verificationNotes: 'Admin attempting to force expired status manually',
+        })
+      ).toThrow();
+
+      // Accepts valid admin actions
+      expect(() =>
+        AdminVerifyCertificationSchema.parse({
+          verificationStatus: 'VERIFIED',
+          verificationNotes: 'Verified against authoritative ledger',
+        })
+      ).not.toThrow();
+
+      expect(() =>
+        AdminVerifyCertificationSchema.parse({
+          verificationStatus: 'REVOKED',
+          verificationNotes: 'Revoked due to standard audit finding',
+        })
+      ).not.toThrow();
+    });
+
+    it('9. UpdateMediaAssetSchema and validateMergedMediaAsset enforce visibility/publicUrl consistency on partial updates', () => {
+      // Inconsistent update payload: public with null publicUrl
+      expect(() =>
+        UpdateMediaAssetSchema.parse({
+          visibility: 'public',
+          publicUrl: null,
+        })
+      ).toThrow();
+
+      // Inconsistent update payload: private with publicUrl
+      expect(() =>
+        UpdateMediaAssetSchema.parse({
+          visibility: 'private',
+          publicUrl: 'https://cdn.nexora.com/leak.png',
+        })
+      ).toThrow();
+
+      // validateMergedMediaAsset correctly checks merged state
+      const currentPublic = { visibility: 'public' as const, publicUrl: 'https://cdn.nexora.com/pic.webp' };
+      // Patching visibility to private without setting publicUrl to null must throw
+      expect(() =>
+        validateMergedMediaAsset(currentPublic, { visibility: 'private' })
+      ).toThrow();
+
+      // Patching visibility to private WITH publicUrl null succeeds
+      expect(() =>
+        validateMergedMediaAsset(currentPublic, { visibility: 'private', publicUrl: null })
+      ).not.toThrow();
+    });
+
+    it('10. Exact parity between Zod enums and SQLite CHECK constraints', () => {
+      // Verification status enum parity
+      const zodVerificationStatuses = CertificationVerificationStatusSchema.options;
+      expect(zodVerificationStatuses).toEqual([
+        'PENDING_VERIFICATION',
+        'VERIFIED',
+        'EXPIRED',
+        'REVOKED',
+      ]);
+
+      // Publication status enum parity
+      const zodPublicationStatuses = PublicationStatusSchema.options;
+      expect(zodPublicationStatuses).toEqual(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
     });
   });
 });

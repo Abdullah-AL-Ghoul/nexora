@@ -155,20 +155,24 @@ export const CreateCertificationSchema = z.object({
   badgeMediaId: z.string().min(1).nullable().optional(),
   badgeImageUrl: z.string().max(1000).optional().default(''),
   publicationStatus: PublicationStatusSchema.default('DRAFT'),
-  // Client create/update cannot assert official verification
-  verificationStatus: z.enum(['PENDING_VERIFICATION', 'DRAFT']).default('PENDING_VERIFICATION'),
+  // Client create/update cannot assert official verification; DRAFT belongs exclusively to publicationStatus
+  verificationStatus: z.literal('PENDING_VERIFICATION').default('PENDING_VERIFICATION'),
   verificationNotes: z.string().max(2000).optional().default(''),
   sortOrder: z.number().int().min(0).default(0),
 });
 
-export const UpdateCertificationSchema = CreateCertificationSchema.partial();
+export const UpdateCertificationSchema = CreateCertificationSchema.partial().extend({
+  // Client cannot self-verify or set invalid status; only PENDING_VERIFICATION is acceptable if passed
+  verificationStatus: z.literal('PENDING_VERIFICATION').optional(),
+});
 
 /**
  * Dedicated schema for administrative verification actions.
  * Only authenticated administrators can execute this operation.
+ * Expiration is dynamically derived from expirationDate, so EXPIRED cannot be forced via input.
  */
 export const AdminVerifyCertificationSchema = z.object({
-  verificationStatus: z.enum(['VERIFIED', 'REVOKED', 'EXPIRED', 'PENDING_VERIFICATION']),
+  verificationStatus: z.enum(['VERIFIED', 'REVOKED', 'PENDING_VERIFICATION']),
   verificationNotes: z.string().min(3).max(2000),
   verifiedAt: z.string().regex(isoDateRegex).optional(),
 });
@@ -204,5 +208,51 @@ export const UpdateMediaAssetSchema = z.object({
   altText: z.string().max(500).optional(),
   visibility: MediaVisibilitySchema.optional(),
   publicUrl: z.string().max(1000).nullable().optional(),
-});
+}).refine(
+  (data) => {
+    if (data.visibility !== undefined && data.publicUrl !== undefined) {
+      if (data.visibility === 'public') {
+        return data.publicUrl !== null && data.publicUrl.trim().length > 0;
+      }
+      if (data.visibility === 'private') {
+        return data.publicUrl === null;
+      }
+    }
+    return true;
+  },
+  {
+    message: 'Public assets must have a non-empty publicUrl; private assets must have publicUrl = null',
+    path: ['publicUrl'],
+  }
+);
+
+/**
+ * Validates that merging a partial update into an existing media asset produces a valid visibility/publicUrl state.
+ */
+export function validateMergedMediaAsset(
+  current: { visibility: 'public' | 'private'; publicUrl: string | null },
+  patch: { visibility?: 'public' | 'private'; publicUrl?: string | null }
+): void {
+  const mergedVisibility = patch.visibility ?? current.visibility;
+  const mergedPublicUrl = patch.publicUrl !== undefined ? patch.publicUrl : current.publicUrl;
+
+  if (mergedVisibility === 'public' && (!mergedPublicUrl || mergedPublicUrl.trim().length === 0)) {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.custom,
+        message: 'Public assets must have a non-empty publicUrl',
+        path: ['publicUrl'],
+      },
+    ]);
+  }
+  if (mergedVisibility === 'private' && mergedPublicUrl !== null) {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.custom,
+        message: 'Private assets must have publicUrl = null',
+        path: ['publicUrl'],
+      },
+    ]);
+  }
+}
 

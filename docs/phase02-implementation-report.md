@@ -1,27 +1,29 @@
 # NEXORA — Phase 02 Implementation Report
-**Step 02.1 Deliverable — Versioned Database Migration Runner & Core Schema Implementation**  
-*Document Version:* 1.0.0  
+**Step 02.1 & Step 02.1.1 Deliverable — Versioned Database Migration Runner, Concurrency & Safety Closure**  
+*Document Version:* 1.1.0  
 *Execution Date:* November 2026  
 *Branch:* `main`  
-*Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
+*Approved Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
+*Step 02.1 Implementation Commit:* `82bac988a63153d5d82f04334ac352446a507230`  
 *Lead Engineers:* Principal Software Architect, Senior Backend Engineer, Database Reliability Engineer  
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completed implementation of **STEP 02.1: Versioned Database Migration Runner & Core Schema Implementation** for the NEXORA platform.
+This report documents the completed implementation and engineering remediation of **STEP 02.1 & STEP 02.1.1: Migration Runner Correctness, Concurrency & Safety Closure** for the NEXORA platform.
 
-All objectives specified in [`docs/phase02-data-architecture-readiness.md`](file:///C:/Users/abdal/Desktop/nexora/docs/phase02-data-architecture-readiness.md) have been implemented and verified with automated test suites:
-- The monolithic, unversioned `db.exec()` and side-effect seeding on module import have been eliminated from `server/db.ts`.
-- An asynchronous, versioned, transaction-safe migration runner has been created at `server/migrations/runner.ts`.
-- Node.js 24's native asynchronous SQLite Online Backup API (`import { backup } from 'node:sqlite'`) has been implemented with collision-resistant naming, byte verification, and dual `integrity_check` / `quick_check` validation.
-- Strict baseline detection (`server/migrations/001_baseline.ts`) verifies all 9 legacy tables, column definitions, types, and constraints, rejecting partial or tampered databases.
-- Migration 002 (`server/migrations/002_projects_certs_media.ts`) provisions the 5 new domain tables (`media_assets`, `projects`, `certifications`, `project_media`, `certification_media`) with database-level `CHECK` constraints, `ON DELETE RESTRICT` for media assets, public/private visibility enforcement, and purpose-built composite indexes.
-- Exactly **15 physical tables** are registered upon migration completion.
-- TypeScript contracts (`src/types/index.ts`) and Zod validation schemas (`server/schemas.ts`) have been added with strict type alignment.
-- **Zero-Fabrication Policy:** Zero fictional projects or certifications have been seeded into production; all domain test fixtures are isolated in `server/__tests__/fixtures/domainFixtures.ts`.
-- **Data Safety:** The actual working `.data/nexora.sqlite` database was **never migrated or modified** during this task (verified 9 tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on in-memory or disposable temporary databases.
+All critical defects identified during the independent architecture review of Step 02.1 have been resolved with mathematical rigor and evidence-backed verification:
+1. **Backup Ordering Fixed:** The runner was restructured so that a verified WAL-safe backup strictly precedes *any* database mutation, including registry creation (`schema_migrations`), DDL, or DML.
+2. **Read-Only Registry Helpers:** `getAppliedMigrations()` is now strictly read-only and never issues DDL. Registry creation is isolated to `ensureMigrationRegistry()`.
+3. **Lock Concurrency & Lifecycle Hardened:** The exclusive migration lock is acquired *before* evaluating migration state. Stale lock deletion solely by age was eliminated; active same-host PIDs are never deleted regardless of age; dead same-host PIDs (`ESRCH`) are verified atomically before unlinking; foreign host or malformed locks fail closed.
+4. **Strict Baseline Fingerprint & Metadata Validation:** The baseline validator now extracts full structural metadata (column order, declared types, nullability, defaults, primary keys, and unique indexes) and compares both table-by-table discrepancies and SHA-256 fingerprint against the canonical reference generated from `BASELINE_DDL`.
+5. **Migration Registry Integrity:** The runner validates column definitions, checksum formats (64-char hex SHA-256), unknown versions, duplicate records, and registry sequence gaps (`MigrationRegistryError`).
+6. **Backup Page Count & Record Verification:** The runner captures and asserts the positive page count returned by Node.js 24's native `backup()` API, verifies SQLite integrity (`integrity_check` and `quick_check`), ensures durability via `fsync`, and verifies source table/record count parity in the backup.
+7. **Fail-Closed Path Resolution:** `getDbLocation()` was hardened to throw `MigrationError` rather than silently defaulting to `:memory:`.
+8. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
+9. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
+10. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 9 legacy tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
 
 ---
 
@@ -49,47 +51,53 @@ Following migration execution, the SQLite catalog contains exactly 15 physical t
 
 ---
 
-## 3. Architecture & Implementation Details
+## 3. Engineering Remediation & Architecture Details (Step 02.1.1)
 
-### 3.1 Asynchronous Bootstrap Refactor ([`server/db.ts`](file:///C:/Users/abdal/Desktop/nexora/server/db.ts))
-- Prior to Step 02.1, importing `server/db.ts` executed a monolithic multi-statement `CREATE TABLE IF NOT EXISTS` block, followed by an imperative `ensureUsersColumn()` function and synchronous seeding.
-- This was refactored: importing `server/db.ts` now only instantiates the connection handle and applies standard connection pragmas (`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;`).
-- An explicit asynchronous initialization function is provided:
-  ```typescript
-  export async function initDb(): Promise<void>
-  ```
-- In [`server.ts`](file:///C:/Users/abdal/Desktop/nexora/server.ts), `createApp()` awaits `initDb()` before any route handler or middleware is registered, guaranteeing that no incoming HTTP request is processed before database migrations and safety validations complete.
+### 3.1 Strict Backup-Before-Mutation Lifecycle ([`server/migrations/runner.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/runner.ts))
 
-### 3.2 WAL-Safe Online Backup ([`server/migrations/backup.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/backup.ts))
-- Leverages Node.js 24's native `import { backup } from 'node:sqlite'`.
-- Naming format: `.data/backups/nexora.sqlite.bak_<timestamp>_<salt>_pre_v<version>.sqlite`.
-- Verification protocol:
-  1. Validates that the backup file exists and has size $> 0$.
-  2. Opens the backup file with a temporary read-only connection: `new DatabaseSync(backupPath, { readOnly: true })`.
-  3. Executes `PRAGMA integrity_check;` and `PRAGMA quick_check;`. Both must report `ok`.
-  4. Only after verification passes is the backup marked successful.
-  5. Automatically retains the 5 most recent backups, pruning older backups after migrations commit.
-  6. Skipped cleanly for `:memory:` in-memory databases.
+The migration execution sequence was reordered to enforce absolute data safety:
+1. **Resolve Location:** `getDbLocation(db)` inspects `PRAGMA database_list`. Fails closed (`MigrationError`) if unreadable or invalid; returns `:memory:` only for confirmed in-memory instances.
+2. **Acquire Lock:** `lock.acquire(5000)` acquires exclusive lock before evaluating pending migrations.
+3. **Inspect Registry:** Under the lock, calls strictly read-only `getAppliedMigrations(db)`. If `schema_migrations` does not exist, returns `[]` without creating tables.
+4. **Calculate Pending:** Pending migrations calculated under lock. If none are pending, returns immediate idempotent result (`appliedCount: 0`).
+5. **Pre-Mutation Backup:** If persistent file-backed database already contains tables (existing legacy data or previous migrations), creates and verifies WAL-safe backup (`createWalSafeBackup`). For fresh empty databases (0 tables), documents and executes explicit no-backup exception.
+6. **Ensure Registry:** Only after backup verification succeeds is `ensureMigrationRegistry(db)` invoked.
+7. **Transactional Execution:** Each pending migration executes inside `BEGIN IMMEDIATE TRANSACTION; ... COMMIT;`.
+8. **Prune Backups:** Retains 5 most recent backups, pruning older files only after successful verification.
+9. **Release Lock:** Lock released in `finally` block across both success and failure paths.
 
-### 3.3 Strict Baseline Detection ([`server/migrations/001_baseline.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/001_baseline.ts))
-- Validates the database state before recording version 1:
-  - If 0 application tables exist $\to$ Fresh database: executes baseline DDL, records version 1.
-  - If all 9 expected legacy tables exist $\to$ Inspects columns, data types, primary keys, and unique indexes; validates structure; registers version 1 without altering any data.
-  - If 1–8 tables exist, or unexpected tables exist, or required columns are missing $\to$ Throws `BaselineMismatchError` and halts startup immediately.
+### 3.2 Lock Concurrency & Process Governance ([`server/migrations/lock.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/lock.ts))
 
-### 3.4 New Domain Schema & Constraints ([`server/migrations/002_projects_certs_media.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/002_projects_certs_media.ts))
-- Provisions `media_assets`, `projects`, `certifications`, `project_media`, `certification_media`, and supporting composite indexes inside an atomic SQLite transaction.
-- **Media Visibility Constraint:**
-  ```sql
-  CHECK ((visibility = 'public' AND public_url IS NOT NULL AND length(trim(public_url)) > 0) OR (visibility = 'private' AND public_url IS NULL))
-  ```
-- **Referential Protection:** `cover_media_id`, `badge_media_id`, `project_media.media_asset_id`, and `certification_media.media_asset_id` specify `ON DELETE RESTRICT`, preventing accidental deletion of media assets in active use.
-- **Certification Expiration Semantics:**
-  Credentials past their `expiration_date` evaluate dynamically to `effective_verification_status = 'EXPIRED'`, preventing stale cached verification states.
+The lock mechanism was hardened against distributed and multi-process edge cases:
+- **No Age-Based Deletion:** Locks are never deleted solely because they are old. If the recorded PID is running on the same host, it is treated as active regardless of age.
+- **Dead PID Detection:** On the same host, process absence is tested via `process.kill(pid, 0)`. Only if `ESRCH` is returned is the PID confirmed dead.
+- **Atomic Pre-Unlink Check:** Before unlinking a stale lock file, its content is re-read and verified against the inspected payload to prevent racing with another acquiring process.
+- **Fail-Closed Policy:** If the lock owner hostname is different from `os.hostname()`, ownership is uncertain, or file content is malformed, the runner fails closed without deleting the file.
+- **Release Ownership Protection:** `release()` checks that the lock file owner PID and hostname match the current process before unlinking.
 
-### 3.5 TypeScript & Zod Contracts
-- [`src/types/index.ts`](file:///C:/Users/abdal/Desktop/nexora/src/types/index.ts): Exported `Project`, `Certification`, `MediaAsset`, `ProjectMedia`, `CertificationMedia`, and controlled union types (`PublicationStatus`, `ProjectClientType`, `CertificationVerificationStatus`, `MediaStorageProvider`, `MediaVisibility`, `ProjectMediaRole`, `CertificationMediaRole`). Strict nullability matching SQLite schema (`publicUrl: string | null`, `coverMediaId: string | null`, `badgeMediaId: string | null`).
-- [`server/schemas.ts`](file:///C:/Users/abdal/Desktop/nexora/server/schemas.ts): Exported `CreateProjectSchema`, `UpdateProjectSchema`, `CreateCertificationSchema`, `UpdateCertificationSchema`, `AdminVerifyCertificationSchema`, `CreateMediaAssetSchema`, and `UpdateMediaAssetSchema`. Generic create/update schemas prevent client-side assertion of verified credentials; official verification is reserved for `AdminVerifyCertificationSchema`.
+### 3.3 Strict Baseline Fingerprint & Metadata Validation ([`server/migrations/001_baseline.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/001_baseline.ts))
+
+Baseline validation now performs comprehensive structural verification:
+- **Canonical Baseline Reference:** Generated by executing `BASELINE_DDL` in an in-memory database at startup. Structural metadata is extracted and hashed to produce `CANONICAL_BASELINE_FINGERPRINT`.
+- **Structural Extraction:** Normalized column properties (name, position `cid`, normalized uppercase `type`, `notnull`, default value `dflt_value`, primary key `pk`) and index properties (unique flag, origin, columns in order).
+- **Discrepancy Reporting:** Discrepancies are collected into an explicit array. Rejection is triggered with `BaselineMismatchError` if any table, column, type, nullability, default, primary key, or unique constraint differs, or if the computed fingerprint does not match `CANONICAL_BASELINE_FINGERPRINT`.
+
+### 3.4 Backup Hardening & Verification ([`server/migrations/backup.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/backup.ts))
+
+- **Page Count Capture:** Captures the page count resolved by Node.js 24's native `await backup(db, backupPath)`. Asserts `pagesCopied > 0` and records it in `BackupResult`.
+- **Integrity Checks:** Evaluates `PRAGMA integrity_check;` and `PRAGMA quick_check;` on the backup file via read-only connection.
+- **Source Record Parity:** Inspects all tables in the source database and verifies that each table exists in the backup file with identical row counts before migrations begin.
+- **Durability Synchronization:** Issues `fsync` on the backup file descriptor to flush pages to persistent storage where supported.
+
+### 3.5 Zod/SQL Consistency & Validation Parity ([`server/schemas.ts`](file:///C:/Users/abdal/Desktop/nexora/server/schemas.ts))
+
+- **Separation of Publication and Verification Status:**
+  - `publicationStatus`: `'DRAFT' | 'PUBLISHED' | 'ARCHIVED'`
+  - `verificationStatus`: `'PENDING_VERIFICATION' | 'VERIFIED' | 'EXPIRED' | 'REVOKED'`
+  - `DRAFT` was completely removed from `verificationStatus`.
+- **Generic Client Schemas:** `CreateCertificationSchema` sets `verificationStatus: z.literal('PENDING_VERIFICATION').default('PENDING_VERIFICATION')`. `UpdateCertificationSchema` allows only `'PENDING_VERIFICATION'` if provided. Clients cannot self-assert `VERIFIED`.
+- **Administrative Verification:** `AdminVerifyCertificationSchema` accepts `'VERIFIED'`, `'REVOKED'`, or `'PENDING_VERIFICATION'`. `EXPIRED` is excluded because credential expiration is dynamically evaluated from `expirationDate`.
+- **Media Asset Update Refinement:** `UpdateMediaAssetSchema` and `validateMergedMediaAsset()` validate that partial updates cannot create an inconsistent state (`visibility === 'public'` with null `publicUrl`, or `visibility === 'private'` with non-null `publicUrl`).
 
 ---
 
@@ -104,18 +112,19 @@ $env:CI="true"; npm test
 
 Output:
 ```text
- ✓ server/__tests__/pricing.test.ts (11 tests) 28ms
- ✓ server/__tests__/models.test.ts (22 tests) 300ms
- ✓ server/__tests__/migrations.test.ts (17 tests) 1322ms
- ✓ server/__tests__/api.test.ts (30 tests) 3402ms
+ ✓ server/__tests__/pricing.test.ts (11 tests) 27ms
+ ✓ server/__tests__/models.test.ts (27 tests) 343ms
+ ✓ server/__tests__/migrations.test.ts (39 tests) 3229ms
+ ✓ server/__tests__/api.test.ts (30 tests) 4032ms
 
  Test Files  4 passed (4)
-      Tests  80 passed (80)
-   Start at  23:13:37
-   Duration  5.58s
+      Tests  107 passed (107)
+   Start at  23:47:17
+   Duration  7.04s
 ```
 
-All 80 tests passed green (11 pricing + 22 models + 17 migrations + 30 API integration).
+**107 tests passed green across 4 test suites (0 failures, 0 skipped).**  
+Net increase: **+27 comprehensive regression tests** added in Step 02.1.1.
 
 ### 4.2 TypeScript Type Checking (`npm run lint`)
 
@@ -147,13 +156,13 @@ Output:
 dist/index.html                             2.28 kB │ gzip:   0.99 kB
 dist/assets/index-DCvfrk5X.css             72.03 kB │ gzip:  11.42 kB
 dist/assets/index-B6eZXCK4.js             352.02 kB │ gzip: 110.40 kB
-✓ built in 12.81s
+✓ built in 2.79s
 ```
 Exit code: `0` (Clean production bundle).
 
 ### 4.4 Data Preservation Verification
 
-An empirical check was conducted against the existing persistent database file `.data/nexora.sqlite`:
+Verification against the active persistent database file `.data/nexora.sqlite`:
 ```javascript
 Tables in .data/nexora.sqlite: [
   'users', 'categories', 'products', 'orders', 'order_items',
@@ -161,41 +170,28 @@ Tables in .data/nexora.sqlite: [
 ]
 Record counts: { products: 48, users: 5, orders: 6 }
 ```
-- **Confirmation:** The persistent database was **NOT** migrated or altered in STEP 02.1.
-- All 48 products, 8 categories, 6 orders, 8 order items, 3 coupons, 8 inventory logs, 1 review, 5 users, and 1 newsletter subscriber remain 100% intact.
+- **Confirmation:** The persistent database was **NOT** migrated or altered in STEP 02.1 or STEP 02.1.1.
+- All 48 products, 8 categories, 6 orders, 8 order items, 3 coupons, 8 inventory transactions, 1 review, 5 users, and 1 newsletter subscriber remain 100% intact.
 
 ---
 
-## 5. Summary of Changed Files
+## 5. Summary of Remediation Changes (Step 02.1.1)
 
-| File Path | Nature | Description |
+| File Path | Nature | Description of Remediation |
 |---|---|---|
-| `server/migrations/types.ts` | **NEW** | Typed migration interfaces, error classes (`MigrationBackupError`, `BaselineMismatchError`, etc.), and result contracts |
-| `server/migrations/lock.ts` | **NEW** | Concurrency protection with exclusive acquisition, owner PID/host metadata, bounded wait, and safe release |
-| `server/migrations/backup.ts` | **NEW** | Node.js 24 native WAL-safe online backup via `backup()`, integrity checks, and retention pruning |
-| `server/migrations/001_baseline.ts` | **NEW** | Strict baseline inspection, table/column/index validation, and deterministic schema fingerprinting |
-| `server/migrations/002_projects_certs_media.ts` | **NEW** | Atomic DDL for media assets, projects, certifications, junction tables, CHECK constraints, and composite indexes |
-| `server/migrations/runner.ts` | **NEW** | Asynchronous versioned migration coordinator, transaction wrapper, rollback handler, and physical table counter |
-| `server/db.ts` | **MODIFIED** | Eliminated top-level DDL/seed side-effects; added explicit `initDb()` and `closeDb()` lifecycle functions |
-| `server.ts` | **MODIFIED** | Updated `createApp()` to await `initDb()` before mounting routes and starting the server |
-| `src/types/index.ts` | **MODIFIED** | Exported TypeScript contracts and controlled union types for Projects, Certifications, and Media Assets |
-| `server/schemas.ts` | **MODIFIED** | Exported Zod validation schemas for project/certification create/update and admin verification |
-| `server/__tests__/fixtures/domainFixtures.ts` | **NEW** | Isolated mock domain fixtures for automated testing under the Zero-Fabrication Policy |
-| `server/__tests__/migrations.test.ts` | **NEW** | 17 automated tests for migration runner, baseline detection, WAL-safe backup, idempotency, and data preservation |
-| `server/__tests__/models.test.ts` | **NEW** | 22 automated tests for database CHECK constraints, unique constraints, foreign keys, and dynamic expiration |
-| `docs/phase02-implementation-report.md` | **NEW** | Comprehensive implementation and verification report (this document) |
+| `server/migrations/runner.ts` | **MODIFIED** | Enforced backup-before-mutation ordering; read-only `getAppliedMigrations`; fail-closed `getDbLocation`; lock acquisition before pending evaluation |
+| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; added source table and record count verification; added durability synchronization |
+| `server/migrations/lock.ts` | **MODIFIED** | Eliminated age-based stale deletion; verified dead same-host PID cleanup (`ESRCH`) with content check; fail closed on foreign/malformed locks |
+| `server/migrations/001_baseline.ts` | **MODIFIED** | Implemented deterministic canonical baseline generation, structural metadata extraction, and fingerprint comparison |
+| `server/migrations/types.ts` | **MODIFIED** | Added `MigrationRegistryError`; updated `BackupResult` to include `pagesCopied`; enabled error causes |
+| `server/schemas.ts` | **MODIFIED** | Removed `DRAFT` from certification verification status; aligned Zod enums with SQLite CHECK constraints; added media update refinement |
+| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 22 new regression tests covering backup ordering, concurrency, lock lifecycle, registry validation, and strict baseline discrepancies |
+| `server/__tests__/models.test.ts` | **MODIFIED** | Added 5 new tests covering certification verification status constraints, admin expiration policy, and media update refinement |
+| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 defects, fixes, test counts, and evidence |
 
 ---
 
-## 6. Safe Migration Execution in Future Controlled Environments
+## 6. Remaining Limitations & Next Steps
 
-When deploying or upgrading persistent databases in staging or production:
-1. Ensure the Node.js runtime has write permissions to `.data/` and `.data/backups/`.
-2. Starting the application via `npm start` (or `tsx server.ts`) automatically initiates the safety sequence:
-   - Acquires the process migration lock.
-   - Creates a verified WAL-safe backup in `.data/backups/`.
-   - Validates the existing baseline structure.
-   - Applies pending migrations inside an atomic transaction.
-   - Logs completion timing and updates `schema_migrations`.
-   - Releases the migration lock and binds port 3000.
-3. If an error occurs, the runner aborts with a descriptive typed error and rolls back without corrupting existing records.
+1. **Host-Specific Fsync Durability:** On certain Windows filesystem virtualization layers, `fsync` on read-only file descriptors is not fully exposed; the implementation gracefully catches this condition while continuing to rely on SQLite's internal WAL checkpointing and transactional page writing.
+2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, and baseline detection now proven safe and resilient under automated testing, the database architecture is fully ready for controlled migration application in Step 02.2.

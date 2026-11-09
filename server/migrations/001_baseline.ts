@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import { BaselineMismatchError, type Migration } from './types.js';
 
@@ -157,6 +157,115 @@ export const BASELINE_CHECKSUM = crypto
   .update(BASELINE_DDL.trim())
   .digest('hex');
 
+export interface NormalizedColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+}
+
+export interface NormalizedIndexInfo {
+  name: string;
+  unique: number;
+  origin: string;
+  columns: string[];
+}
+
+export interface NormalizedTableStructure {
+  name: string;
+  columns: NormalizedColumnInfo[];
+  indexes: NormalizedIndexInfo[];
+}
+
+/**
+ * Extracts and normalizes the structural metadata of a single table.
+ */
+export function extractTableStructure(db: DatabaseSync, tableName: string): NormalizedTableStructure {
+  const cols = (db.prepare(`PRAGMA table_info("${tableName}");`).all() as any[]) ?? [];
+  cols.sort((a, b) => a.cid - b.cid);
+  const normalizedCols: NormalizedColumnInfo[] = cols.map((c) => ({
+    cid: Number(c.cid),
+    name: String(c.name),
+    type: String(c.type || '').toUpperCase(),
+    notnull: Number(c.notnull),
+    dflt_value: c.dflt_value === null || c.dflt_value === undefined ? null : String(c.dflt_value),
+    pk: Number(c.pk),
+  }));
+
+  const rawIndexes = (db.prepare(`PRAGMA index_list("${tableName}");`).all() as any[]) ?? [];
+  const normalizedIndexes: NormalizedIndexInfo[] = rawIndexes.map((idx) => {
+    const idxCols = (db.prepare(`PRAGMA index_info("${idx.name}");`).all() as any[]) ?? [];
+    idxCols.sort((a, b) => a.seqno - b.seqno);
+    return {
+      name: idx.name.startsWith('sqlite_autoindex_') ? 'autoindex' : String(idx.name),
+      unique: Number(idx.unique),
+      origin: String(idx.origin),
+      columns: idxCols.map((c) => String(c.name)),
+    };
+  });
+
+  normalizedIndexes.sort((a, b) => {
+    const colA = a.columns.join(',');
+    const colB = b.columns.join(',');
+    return colA.localeCompare(colB) || a.unique - b.unique;
+  });
+
+  return {
+    name: tableName,
+    columns: normalizedCols,
+    indexes: normalizedIndexes,
+  };
+}
+
+/**
+ * Extracts normalized baseline structural metadata for all 9 legacy tables.
+ */
+export function extractBaselineStructure(db: DatabaseSync): NormalizedTableStructure[] {
+  const list = [...LEGACY_TABLE_NAMES].sort();
+  return list.map((t) => extractTableStructure(db, t));
+}
+
+/**
+ * Computes a deterministic SHA-256 fingerprint from normalized structural metadata.
+ */
+export function computeStructureFingerprint(tables: NormalizedTableStructure[]): string {
+  const serialized = JSON.stringify(tables);
+  return crypto.createHash('sha256').update(serialized).digest('hex');
+}
+
+let cachedCanonicalStructure: NormalizedTableStructure[] | null = null;
+let cachedCanonicalFingerprint: string | null = null;
+
+/**
+ * Generates the authoritative canonical baseline structure and fingerprint from BASELINE_DDL.
+ */
+export function getCanonicalBaseline(): {
+  structure: NormalizedTableStructure[];
+  fingerprint: string;
+} {
+  if (cachedCanonicalStructure && cachedCanonicalFingerprint) {
+    return { structure: cachedCanonicalStructure, fingerprint: cachedCanonicalFingerprint };
+  }
+
+  const refDb = new DatabaseSync(':memory:');
+  try {
+    refDb.exec(BASELINE_DDL);
+    cachedCanonicalStructure = extractBaselineStructure(refDb);
+    cachedCanonicalFingerprint = computeStructureFingerprint(cachedCanonicalStructure);
+    return { structure: cachedCanonicalStructure, fingerprint: cachedCanonicalFingerprint };
+  } finally {
+    try {
+      refDb.close();
+    } catch {
+      // Ignore cleanup
+    }
+  }
+}
+
+export const CANONICAL_BASELINE_FINGERPRINT = getCanonicalBaseline().fingerprint;
+
 /**
  * Inspects all application tables currently in SQLite (excluding sqlite internal tables and schema_migrations).
  */
@@ -170,26 +279,10 @@ export function getApplicationTableNames(db: DatabaseSync): string[] {
 }
 
 /**
- * Builds a deterministic structural fingerprint of the 9 legacy tables.
+ * Builds a deterministic structural fingerprint of the 9 legacy tables from an active database connection.
  */
 export function computeLegacyFingerprint(db: DatabaseSync): string {
-  const elements: string[] = [];
-
-  for (const table of [...LEGACY_TABLE_NAMES].sort()) {
-    const cols = (db.prepare(`PRAGMA table_info("${table}");`).all() as any[]) ?? [];
-    cols.sort((a, b) => a.cid - b.cid);
-    for (const c of cols) {
-      elements.push(`${table}.${c.name}:${c.type}:${c.notnull}:${c.dflt_value}:${c.pk}`);
-    }
-
-    const indexes = (db.prepare(`PRAGMA index_list("${table}");`).all() as any[]) ?? [];
-    indexes.sort((a, b) => a.name.localeCompare(b.name));
-    for (const idx of indexes) {
-      elements.push(`${table}.index:${idx.name}:${idx.unique}`);
-    }
-  }
-
-  return crypto.createHash('sha256').update(elements.join('|')).digest('hex');
+  return computeStructureFingerprint(extractBaselineStructure(db));
 }
 
 /**
@@ -232,34 +325,99 @@ export const migration001: Migration = {
       );
     }
 
-    // 3. Verify essential columns and nullability for each table
-    const requiredColumns: Record<string, string[]> = {
-      users: ['id', 'email', 'name', 'role', 'password_hash', 'auth_provider', 'created_at'],
-      categories: ['id', 'name', 'slug', 'description', 'image_url', 'item_count'],
-      products: ['id', 'name', 'slug', 'price', 'sku', 'stock', 'category_id', 'status', 'is_featured'],
-      orders: ['id', 'order_number', 'user_id', 'subtotal', 'total', 'status', 'payment_status'],
-      order_items: ['id', 'order_id', 'product_id', 'unit_price', 'quantity', 'total_price'],
-      coupons: ['id', 'code', 'type', 'value', 'starts_at', 'expires_at', 'is_active'],
-      reviews: ['id', 'product_id', 'user_id', 'rating'],
-      inventory_transactions: ['id', 'product_id', 'sku', 'type', 'quantity', 'stock_after'],
-      newsletter_subscribers: ['id', 'email', 'created_at'],
-    };
+    // 3. Deep structural comparison against canonical baseline
+    const { structure: canonicalTables, fingerprint: canonicalFp } = getCanonicalBaseline();
+    const actualTables = extractBaselineStructure(db);
+    const actualFp = computeStructureFingerprint(actualTables);
 
-    for (const [table, cols] of Object.entries(requiredColumns)) {
-      const tableInfo = (db.prepare(`PRAGMA table_info("${table}");`).all() as any[]) ?? [];
-      const colNames = tableInfo.map((c) => c.name);
-      for (const requiredCol of cols) {
-        if (!colNames.includes(requiredCol)) {
-          discrepancies.push(`Table "${table}" is missing required column "${requiredCol}"`);
+    for (const canonicalTable of canonicalTables) {
+      const actualTable = actualTables.find((t) => t.name === canonicalTable.name);
+      if (!actualTable) continue;
+
+      // Verify column count
+      if (actualTable.columns.length !== canonicalTable.columns.length) {
+        discrepancies.push(
+          `Table "${canonicalTable.name}" column count mismatch: expected ${canonicalTable.columns.length}, got ${actualTable.columns.length}`
+        );
+      }
+
+      // Verify each column's specifications
+      for (const col of canonicalTable.columns) {
+        const actualCol = actualTable.columns.find((c) => c.name === col.name);
+        if (!actualCol) {
+          discrepancies.push(`Table "${canonicalTable.name}" is missing required column "${col.name}"`);
+          continue;
+        }
+        if (actualCol.cid !== col.cid) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" column "${col.name}" position mismatch: expected cid ${col.cid}, got ${actualCol.cid}`
+          );
+        }
+        if (actualCol.type !== col.type) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" column "${col.name}" type mismatch: expected "${col.type}", got "${actualCol.type}"`
+          );
+        }
+        if (actualCol.notnull !== col.notnull) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" column "${col.name}" NOT NULL mismatch: expected ${col.notnull}, got ${actualCol.notnull}`
+          );
+        }
+        if (actualCol.dflt_value !== col.dflt_value) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" column "${col.name}" default value mismatch: expected ${col.dflt_value}, got ${actualCol.dflt_value}`
+          );
+        }
+        if (actualCol.pk !== col.pk) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" column "${col.name}" primary key mismatch: expected pk ${col.pk}, got ${actualCol.pk}`
+          );
+        }
+      }
+
+      // Check for unexpected extra columns
+      for (const actualCol of actualTable.columns) {
+        if (!canonicalTable.columns.some((c) => c.name === actualCol.name)) {
+          discrepancies.push(`Table "${canonicalTable.name}" contains unexpected column "${actualCol.name}"`);
+        }
+      }
+
+      // Verify unique constraints / unique indexes
+      for (const canonicalIdx of canonicalTable.indexes) {
+        const matching = actualTable.indexes.find(
+          (idx) =>
+            idx.unique === canonicalIdx.unique &&
+            idx.columns.join(',') === canonicalIdx.columns.join(',')
+        );
+        if (!matching) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" is missing required ${canonicalIdx.unique ? 'unique ' : ''}constraint on columns: (${canonicalIdx.columns.join(', ')})`
+          );
+        }
+      }
+
+      for (const actualIdx of actualTable.indexes) {
+        const matching = canonicalTable.indexes.find(
+          (idx) =>
+            idx.unique === actualIdx.unique &&
+            idx.columns.join(',') === actualIdx.columns.join(',')
+        );
+        if (!matching && actualIdx.unique) {
+          discrepancies.push(
+            `Table "${canonicalTable.name}" has unexpected unique constraint on columns: (${actualIdx.columns.join(', ')})`
+          );
         }
       }
     }
 
-    if (discrepancies.length > 0) {
-      throw new BaselineMismatchError(
-        'Legacy database schema contains column discrepancies',
-        discrepancies
-      );
+    // 4. Assert fingerprint parity
+    if (actualFp !== canonicalFp || discrepancies.length > 0) {
+      if (discrepancies.length === 0) {
+        discrepancies.push(
+          `Structural fingerprint mismatch: expected canonical "${canonicalFp}", got "${actualFp}"`
+        );
+      }
+      throw new BaselineMismatchError('Legacy database schema contains structural discrepancies', discrepancies);
     }
 
     // Baseline is valid! Do NOT recreate or alter any tables or records.
