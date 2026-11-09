@@ -92,3 +92,117 @@ export const ReviewSchema = z.object({
   title: z.string().min(1).max(200),
   comment: z.string().min(1).max(2000),
 });
+
+// ─── Phase 02: Projects, Certifications & Media Zod Schemas ───────────────────
+
+export const PublicationStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
+export const ProjectClientTypeSchema = z.enum(['PRIVATE_COLLECTOR', 'RESIDENTIAL', 'COMMERCIAL', 'INSTITUTIONAL']);
+export const CertificationVerificationStatusSchema = z.enum(['PENDING_VERIFICATION', 'VERIFIED', 'EXPIRED', 'REVOKED']);
+export const MediaStorageProviderSchema = z.enum(['local', 's3', 'gcs']);
+export const MediaVisibilitySchema = z.enum(['public', 'private']);
+export const ProjectMediaRoleSchema = z.enum([
+  'COVER',
+  'GALLERY',
+  'DIAGRAM',
+  'BEFORE_AFTER_BEFORE',
+  'BEFORE_AFTER_AFTER',
+  'BLUEPRINT',
+  'INSTALLATION',
+]);
+export const CertificationMediaRoleSchema = z.enum([
+  'BADGE',
+  'CERTIFICATE_SCAN',
+  'TEST_REPORT',
+  'EVIDENCE_DOCUMENT',
+  'AUDIT_REPORT',
+]);
+
+const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const isoDateRegex = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z?)?$/;
+
+export const CreateProjectSchema = z.object({
+  slug: z.string().min(2).max(120).regex(slugRegex, 'Slug must contain only lowercase letters, numbers, and single hyphens'),
+  title: z.string().min(2).max(200),
+  subtitle: z.string().max(300).optional().default(''),
+  discipline: z.string().min(2).max(100),
+  clientType: ProjectClientTypeSchema.default('PRIVATE_COLLECTOR'),
+  clientName: z.string().max(200).nullable().optional(),
+  description: z.string().max(10000).optional().default(''),
+  challenge: z.string().max(5000).optional().default(''),
+  solution: z.string().max(5000).optional().default(''),
+  materials: z.array(z.string().min(1).max(100)).max(50).optional().default([]),
+  location: z.string().max(200).optional().default(''),
+  completionDate: z.string().regex(isoDateRegex, 'Must be a valid ISO date').nullable().optional(),
+  coverMediaId: z.string().min(1).nullable().optional(),
+  coverImageUrl: z.string().max(1000).optional().default(''),
+  publicationStatus: PublicationStatusSchema.default('DRAFT'),
+  isFeatured: z.boolean().default(false),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const UpdateProjectSchema = CreateProjectSchema.partial();
+
+export const CreateCertificationSchema = z.object({
+  slug: z.string().min(2).max(120).regex(slugRegex, 'Slug must contain only lowercase letters, numbers, and single hyphens'),
+  title: z.string().min(2).max(200),
+  issuingOrganization: z.string().min(2).max(200),
+  credentialId: z.string().max(100).optional().default(''),
+  credentialUrl: z.string().url().max(1000).nullable().optional(),
+  issueDate: z.string().regex(isoDateRegex, 'Must be a valid ISO date'),
+  expirationDate: z.string().regex(isoDateRegex, 'Must be a valid ISO date').nullable().optional(),
+  applicableDisciplines: z.array(z.string().min(1).max(100)).max(20).optional().default([]),
+  skillsStandards: z.string().max(2000).optional().default(''),
+  badgeMediaId: z.string().min(1).nullable().optional(),
+  badgeImageUrl: z.string().max(1000).optional().default(''),
+  publicationStatus: PublicationStatusSchema.default('DRAFT'),
+  // Client create/update cannot assert official verification
+  verificationStatus: z.enum(['PENDING_VERIFICATION', 'DRAFT']).default('PENDING_VERIFICATION'),
+  verificationNotes: z.string().max(2000).optional().default(''),
+  sortOrder: z.number().int().min(0).default(0),
+});
+
+export const UpdateCertificationSchema = CreateCertificationSchema.partial();
+
+/**
+ * Dedicated schema for administrative verification actions.
+ * Only authenticated administrators can execute this operation.
+ */
+export const AdminVerifyCertificationSchema = z.object({
+  verificationStatus: z.enum(['VERIFIED', 'REVOKED', 'EXPIRED', 'PENDING_VERIFICATION']),
+  verificationNotes: z.string().min(3).max(2000),
+  verifiedAt: z.string().regex(isoDateRegex).optional(),
+});
+
+export const CreateMediaAssetSchema = z.object({
+  originalFilename: z.string().min(1).max(255),
+  storedFilename: z.string().min(1).max(255),
+  storageProvider: MediaStorageProviderSchema.default('local'),
+  storagePath: z.string().min(1).max(1000),
+  publicUrl: z.string().max(1000).nullable(),
+  visibility: MediaVisibilitySchema.default('public'),
+  mimeType: z.string().min(3).max(100),
+  fileSize: z.number().int().positive(),
+  width: z.number().int().positive().nullable().optional(),
+  height: z.number().int().positive().nullable().optional(),
+  sha256: z.string().length(64),
+  altText: z.string().max(500).optional().default(''),
+  uploadedBy: z.string().min(1),
+}).refine(
+  (data) => {
+    if (data.visibility === 'public') {
+      return data.publicUrl !== null && data.publicUrl.trim().length > 0;
+    }
+    return data.publicUrl === null;
+  },
+  {
+    message: 'Public assets must have a non-empty publicUrl; private assets must have publicUrl = null',
+    path: ['publicUrl'],
+  }
+);
+
+export const UpdateMediaAssetSchema = z.object({
+  altText: z.string().max(500).optional(),
+  visibility: MediaVisibilitySchema.optional(),
+  publicUrl: z.string().max(1000).nullable().optional(),
+});
+

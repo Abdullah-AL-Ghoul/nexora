@@ -120,6 +120,9 @@ app.get('/sitemap.xml', async (_req: Request, res: Response) => {
 // ─── New API Routes ──────────────────────────────────────────────────────────
 
 export async function createApp() {
+  const { initDb } = await import('./server/db.js');
+  await initDb();
+
   const [productsRouter, ordersRouter, categoriesRouter, couponsRouter, inventoryRouter, usersRouter, authRouter, newsletterRouter] = await Promise.all([
     import('./server/routes/products.js'),
     import('./server/routes/orders.js'),

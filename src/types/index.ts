@@ -213,3 +213,118 @@ export interface AdminAnalytics {
   recentOrders: Order[];
   topSellingProducts: { product: Product; unitsSold: number; revenue: number }[];
 }
+
+// ─── Phase 02: Projects, Certifications & Media Asset Contracts ───────────────
+
+export type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+export type ProjectClientType = 'PRIVATE_COLLECTOR' | 'RESIDENTIAL' | 'COMMERCIAL' | 'INSTITUTIONAL';
+export type CertificationVerificationStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'EXPIRED' | 'REVOKED';
+export type MediaStorageProvider = 'local' | 's3' | 'gcs';
+export type MediaVisibility = 'public' | 'private';
+
+export type ProjectMediaRole =
+  | 'COVER'
+  | 'GALLERY'
+  | 'DIAGRAM'
+  | 'BEFORE_AFTER_BEFORE'
+  | 'BEFORE_AFTER_AFTER'
+  | 'BLUEPRINT'
+  | 'INSTALLATION';
+
+export type CertificationMediaRole =
+  | 'BADGE'
+  | 'CERTIFICATE_SCAN'
+  | 'TEST_REPORT'
+  | 'EVIDENCE_DOCUMENT'
+  | 'AUDIT_REPORT';
+
+export interface MediaAsset {
+  id: string;
+  originalFilename: string;
+  storedFilename: string;
+  storageProvider: MediaStorageProvider;
+  storagePath: string;
+  publicUrl: string | null;
+  visibility: MediaVisibility;
+  mimeType: string;
+  fileSize: number;
+  width: number | null;
+  height: number | null;
+  sha256: string;
+  altText: string;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectMedia {
+  id: string;
+  projectId: string;
+  mediaAssetId: string;
+  role: ProjectMediaRole;
+  sortOrder: number;
+  caption: string;
+  createdAt: string;
+  mediaAsset?: MediaAsset;
+}
+
+export interface Project {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  discipline: string;
+  clientType: ProjectClientType;
+  clientName?: string | null;
+  description: string;
+  challenge: string;
+  solution: string;
+  materials: string[];
+  location: string;
+  completionDate?: string | null;
+  coverMediaId: string | null;
+  coverImageUrl: string;
+  publicationStatus: PublicationStatus;
+  isFeatured: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  media?: ProjectMedia[];
+}
+
+export interface CertificationMedia {
+  id: string;
+  certificationId: string;
+  mediaAssetId: string;
+  role: CertificationMediaRole;
+  sortOrder: number;
+  caption: string;
+  createdAt: string;
+  mediaAsset?: MediaAsset;
+}
+
+export interface Certification {
+  id: string;
+  slug: string;
+  title: string;
+  issuingOrganization: string;
+  credentialId: string;
+  credentialUrl?: string | null;
+  issueDate: string;
+  expirationDate?: string | null;
+  applicableDisciplines: string[];
+  skillsStandards: string;
+  badgeMediaId: string | null;
+  badgeImageUrl: string;
+  publicationStatus: PublicationStatus;
+  verificationStatus: CertificationVerificationStatus;
+  verificationNotes: string;
+  verifiedAt: string | null;
+  verifiedBy: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  effectiveVerificationStatus?: CertificationVerificationStatus;
+  evidence?: CertificationMedia[];
+}
+
