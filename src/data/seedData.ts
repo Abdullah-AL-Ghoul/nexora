@@ -114,7 +114,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     images: [
       { id: 'img_tp_01_a', url: '/img/nx-1522335789203-aabd1fc54bc9.jpg', altText: 'Aethelgard Chronograph dial view', isPrimary: true, order: 0 },
       { id: 'img_tp_01_b', url: '/img/nx-1524805444758-089113d48a6d.jpg', altText: 'Aethelgard Chronograph wrist fit', isPrimary: false, order: 1 },
-      { id: 'img_tp_01_c', url: '/img/nx-1547996160-71dfa63582b3.jpg', altText: 'Caseback showing mechanical movement', isPrimary: false, order: 2 },
+      { id: 'img_tp_01_c', url: '/img/nx-1523275335684-37898b6baf30.jpg', altText: 'Caseback showing mechanical movement', isPrimary: false, order: 2 },
     ],
     variants: [
       { id: 'var_tp_01_noir', productId: 'prod_tp_01', name: 'Obsidian Black / Steel Bracelet', sku: 'NX-TP-01-OBS', price: 1850, stock: 8, color: 'Obsidian Black' },
@@ -1178,7 +1178,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     categoryId: 'cat_accessories',
     categoryName: 'Fine Accessories',
     images: [
-      { id: 'img_ac_01_a', url: '/img/nx-1585336261026-410e30349694.jpg', altText: 'Apex titanium fountain pen writing', isPrimary: true, order: 0 },
+      { id: 'img_ac_01_a', url: '/img/nx-1627123424574-724758594e93.jpg', altText: 'Apex titanium fountain pen writing', isPrimary: true, order: 0 },
     ],
     variants: [
       { id: 'var_ac_01_fine', productId: 'prod_ac_01', name: 'Fine 18k Nib', sku: 'NX-AC-01-F', price: 480, stock: 8 },
