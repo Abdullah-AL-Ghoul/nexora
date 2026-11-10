@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   runMigrations,
   getPhysicalTableCount,
@@ -451,7 +452,13 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       const origStatSync = fs.statSync;
       let simulatedFailureTriggered = false;
       const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((targetPath: fs.PathLike, options?: any) => {
-        if (typeof targetPath === 'string' && (targetPath.includes('.sqlite.bak_') || targetPath.includes('.tmp_backup_'))) {
+        if (
+          typeof targetPath === 'string' &&
+          (targetPath.includes('.sqlite.bak_') ||
+            targetPath.includes('.tmp_backup_') ||
+            targetPath.includes('.tmp_staging_') ||
+            targetPath.includes('staging.sqlite'))
+        ) {
           simulatedFailureTriggered = true;
           const res = origStatSync(targetPath, options);
           return { ...res, size: 0 } as any;
@@ -466,6 +473,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         // Verify that partial/corrupted backup artifact was unlinked and does NOT remain on disk
         const files = fs.existsSync(backupDir) ? fs.readdirSync(backupDir) : [];
         expect(files.filter((f) => f.includes('.sqlite.bak_'))).toHaveLength(0);
+        expect(files.filter((f) => f.includes('.tmp_staging_'))).toHaveLength(0);
       } finally {
         statSpy.mockRestore();
         db.close();
@@ -533,7 +541,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       fs.unlinkSync(lockFile);
     });
 
-    it('2. Confirmed dead same-host PID (ESRCH) is safely cleaned up with token and content verification', async () => {
+    it('2. Confirmed dead same-host PID (ESRCH) fails closed with MigrationLockError until manual operator recovery', async () => {
       const lockFile = `${dbPath}.migration.lock`;
 
       let deadPid = 999999;
@@ -554,10 +562,18 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       fs.writeFileSync(lockFile, JSON.stringify(payload));
 
       const lock = new MigrationLock(dbPath);
-      // Lock should detect dead same-host PID, clean it up, and acquire successfully
+      // Under Approach 2, automatic deletion is removed: lock fails closed with descriptive error
+      await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+
+      // Lock file was NOT deleted automatically
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // Operator manual recovery: remove the lock file
+      fs.unlinkSync(lockFile);
+
+      // Now acquire succeeds
       await expect(lock.acquire(1000, 50)).resolves.toBeUndefined();
       lock.release();
-
       expect(fs.existsSync(lockFile)).toBe(false);
     });
 
@@ -614,186 +630,219 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       fs.unlinkSync(lockFile);
     });
 
-    it('6. Stale Snapshot Replacement Before Claim: does NOT move or delete concurrent active lock created after snapshot', async () => {
-      const lockFile = `${dbPath}.migration.lock`;
-      const deadPayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: 999999,
-        hostname: os.hostname(),
-        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-        dbPath,
-      });
-      fs.writeFileSync(lockFile, deadPayload);
+    it('6. In-memory lock enforces acquisition token check on release', async () => {
+      const memLock1 = new MigrationLock(':memory:');
+      const memLock2 = new MigrationLock(':memory:');
 
-      const activePayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: process.pid,
-        hostname: os.hostname(),
-        acquiredAt: new Date().toISOString(),
-        dbPath,
-      });
+      // memLock1 acquires
+      await memLock1.acquire(500);
+      expect(memLock1.getAcquisitionToken()).toBeTruthy();
 
-      // Spy on fs.readFileSync: first read in handleExistingLockFile sees deadPayload.
-      // Immediately after, simulate that Operation C replaces the lock on disk with activePayload.
-      let readCount = 0;
-      const origReadFileSync = fs.readFileSync;
-      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation((targetPath: fs.PathOrFileDescriptor, options?: any) => {
-        if (targetPath === lockFile) {
-          readCount++;
-          if (readCount === 1) {
-            return deadPayload;
-          }
-          if (!fs.existsSync(lockFile) || origReadFileSync(lockFile, 'utf8') !== activePayload) {
-            fs.writeFileSync(lockFile, activePayload);
-          }
-          return activePayload;
-        }
-        return origReadFileSync(targetPath, options);
-      });
+      // memLock2 calls release() -> should NOT clear the memory lock held by memLock1
+      memLock2.release();
 
-      const lock = new MigrationLock(dbPath);
-      try {
-        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+      // A third instance trying to acquire should still fail because lock is held
+      const memLock3 = new MigrationLock(':memory:');
+      await expect(memLock3.acquire(100, 20)).rejects.toThrow(MigrationLockError);
 
-        // Pre-claim verification aborted without calling renameSync!
-        // Active lock C was NEVER moved or deleted!
-        expect(fs.existsSync(lockFile)).toBe(true);
-        expect(origReadFileSync(lockFile, 'utf8')).toBe(activePayload);
-      } finally {
-        readSpy.mockRestore();
-        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
-      }
+      // memLock1 releases
+      memLock1.release();
+
+      // Now memLock3 can acquire
+      await expect(memLock3.acquire(500)).resolves.toBeUndefined();
+      memLock3.release();
     });
 
-    it('7. New Lock Created During Reclamation: active lock created in original path is NOT replaced by restore', async () => {
+    it('7. Strict token release: forging or mismatching token prevents unlinking file lock', async () => {
       const lockFile = `${dbPath}.migration.lock`;
-      const deadPayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: 999999,
-        hostname: os.hostname(),
-        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-        dbPath,
-      });
-      fs.writeFileSync(lockFile, deadPayload);
-
-      const newActivePayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: process.pid,
-        hostname: os.hostname(),
-        acquiredAt: new Date().toISOString(),
-        dbPath,
-      });
-
-      const origRenameSync = fs.renameSync;
-      let simulatedRaceTriggered = false;
-
-      const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((src: fs.PathLike, dest: fs.PathLike) => {
-        origRenameSync(src, dest);
-        if (typeof src === 'string' && src === lockFile && typeof dest === 'string' && dest.includes('.reclaim')) {
-          simulatedRaceTriggered = true;
-          // While candidate is isolated, simulate that another process creates a new active lock at lockFile!
-          fs.writeFileSync(lockFile, newActivePayload);
-          // And candidate file content differs so restore is triggered
-          fs.writeFileSync(dest, JSON.stringify({ token: 'diff', pid: 999999, hostname: os.hostname(), acquiredAt: 'now', dbPath }));
-        }
-      });
-
-      const lock = new MigrationLock(dbPath);
-      try {
-        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
-        expect(simulatedRaceTriggered).toBe(true);
-
-        // Destination already existed, so restore must NOT overwrite the new active lock!
-        expect(fs.existsSync(lockFile)).toBe(true);
-        expect(fs.readFileSync(lockFile, 'utf8')).toBe(newActivePayload);
-      } finally {
-        renameSpy.mockRestore();
-        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
-      }
-    });
-
-    it('8. Restore Destination Exists: restore operation does not overwrite existing destination file', async () => {
-      const lockFile = `${dbPath}.migration.lock`;
-      const activePayload = JSON.stringify({
-        token: 'dest-token-active',
-        pid: process.pid,
-        hostname: os.hostname(),
-        acquiredAt: new Date().toISOString(),
-        dbPath,
-      });
-      fs.writeFileSync(lockFile, activePayload);
-
-      const candidatePath = `${lockFile}.reclaim_test_candidate`;
-      fs.writeFileSync(candidatePath, 'candidate_bytes_to_not_overwrite');
-
-      const lock = new MigrationLock(dbPath);
-      (lock as any).safeRestoreLock(candidatePath);
-
-      // Destination must still have activePayload, preserved untouched!
+      const lock1 = new MigrationLock(dbPath);
+      await lock1.acquire(1000);
       expect(fs.existsSync(lockFile)).toBe(true);
-      expect(fs.readFileSync(lockFile, 'utf8')).toBe(activePayload);
-      expect(fs.existsSync(candidatePath)).toBe(false);
 
-      fs.unlinkSync(lockFile);
+      const lock2 = new MigrationLock(dbPath);
+      (lock2 as any).acquired = true;
+      (lock2 as any).acquisitionToken = 'forged-uuid-different-token';
+
+      // lock2 attempts release with forged token
+      lock2.release();
+
+      // Lock file MUST still exist!
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // lock1 releases with legitimate matching token
+      lock1.release();
+      expect(fs.existsSync(lockFile)).toBe(false);
     });
 
-    it('9. Read Failure After Isolation: candidate read failure restores lock and does NOT leave path open', async () => {
+    it('8. Cross-process mutual exclusion: two independent OS processes contend for same lock', async () => {
       const lockFile = `${dbPath}.migration.lock`;
-      const deadPayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: 999999,
-        hostname: os.hostname(),
-        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-        dbPath,
-      });
-      fs.writeFileSync(lockFile, deadPayload);
+      const readySignal = path.join(tempDir, 'proc1.ready');
+      const releaseSignal = path.join(tempDir, 'proc1.release');
 
-      const origReadFileSync = fs.readFileSync;
-      let failureInjected = false;
-      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation((targetPath: fs.PathOrFileDescriptor, options?: any) => {
-        if (typeof targetPath === 'string' && targetPath.includes('.reclaim')) {
-          failureInjected = true;
-          throw new Error('Simulated I/O read failure on candidate file');
+      // Worker 1: Acquires lock, creates readySignal file, waits for releaseSignal file, then releases and exits
+      const workerScript1 = `
+        import { MigrationLock } from './server/migrations/lock.js';
+        import fs from 'node:fs';
+        const lock = new MigrationLock(${JSON.stringify(dbPath)});
+        await lock.acquire(5000);
+        fs.writeFileSync(${JSON.stringify(readySignal)}, 'ready');
+        while (!fs.existsSync(${JSON.stringify(releaseSignal)})) {
+          await new Promise(r => setTimeout(r, 50));
         }
-        return origReadFileSync(targetPath, options);
+        lock.release();
+        process.exit(0);
+      `;
+
+      const child1 = spawn(process.execPath, ['--import', 'tsx/esm', '-e', workerScript1], {
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      const lock = new MigrationLock(dbPath);
-      try {
-        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
-        expect(failureInjected).toBe(true);
-
-        // Safe restore must have placed the lock back to lockFile
-        expect(fs.existsSync(lockFile)).toBe(true);
-      } finally {
-        readSpy.mockRestore();
-        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      // Wait for child1 to acquire lock and signal readiness
+      const startWait = Date.now();
+      while (!fs.existsSync(readySignal) && Date.now() - startWait < 5000) {
+        await new Promise((r) => setTimeout(r, 50));
       }
+      expect(fs.existsSync(readySignal)).toBe(true);
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // Worker 2 (separate OS child process): Attempts to acquire same lock with 400ms timeout -> MUST FAIL
+      const workerScript2 = `
+        import { MigrationLock } from './server/migrations/lock.js';
+        const lock = new MigrationLock(${JSON.stringify(dbPath)});
+        try {
+          await lock.acquire(400, 50);
+          process.exit(0);
+        } catch (err) {
+          process.stderr.write(err.message);
+          process.exit(1);
+        }
+      `;
+
+      const res2 = spawnSync(process.execPath, ['--import', 'tsx/esm', '-e', workerScript2], {
+        encoding: 'utf8',
+      });
+
+      expect(res2.status).toBe(1);
+      expect(res2.stderr).toContain('Could not acquire migration lock');
+      expect(res2.stderr).toContain('Automatic stale-lock deletion is disabled for safety');
+
+      // Signal worker 1 to release lock and exit cleanly
+      fs.writeFileSync(releaseSignal, 'release');
+      await new Promise<void>((resolve) => {
+        child1.on('close', () => resolve());
+      });
+
+      expect(fs.existsSync(lockFile)).toBe(false);
+
+      // Now a new lock acquire succeeds
+      const lockAfter = new MigrationLock(dbPath);
+      await expect(lockAfter.acquire(1000)).resolves.toBeUndefined();
+      lockAfter.release();
     });
 
-    it('10. Concurrent Reclaimers: multiple concurrent reclaimers on dead lock result in exactly one acquisition', async () => {
+    it('9. Process termination (SIGKILL) leaves lock on disk; subsequent attempt fails closed until manual recovery', async () => {
       const lockFile = `${dbPath}.migration.lock`;
-      const deadPayload = JSON.stringify({
-        token: crypto.randomUUID(),
-        pid: 999999,
-        hostname: os.hostname(),
-        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
-        dbPath,
+      const readySignal = path.join(tempDir, 'proc_kill.ready');
+
+      const workerScript = `
+        import { MigrationLock } from './server/migrations/lock.js';
+        import fs from 'node:fs';
+        const lock = new MigrationLock(${JSON.stringify(dbPath)});
+        await lock.acquire(5000);
+        fs.writeFileSync(${JSON.stringify(readySignal)}, String(process.pid));
+        await new Promise(() => {});
+      `;
+
+      const child = spawn(process.execPath, ['--import', 'tsx/esm', '-e', workerScript], {
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      fs.writeFileSync(lockFile, deadPayload);
 
-      const lockA = new MigrationLock(dbPath);
-      const lockB = new MigrationLock(dbPath);
+      const startWait = Date.now();
+      while (!fs.existsSync(readySignal) && Date.now() - startWait < 5000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(fs.existsSync(readySignal)).toBe(true);
+      const childPid = fs.readFileSync(readySignal, 'utf8');
+      expect(fs.existsSync(lockFile)).toBe(true);
 
-      const results = await Promise.allSettled([lockA.acquire(1000, 50), lockB.acquire(200, 50)]);
+      // Kill the child process abruptly with SIGKILL
+      child.kill('SIGKILL');
 
-      const fulfilled = results.filter((r) => r.status === 'fulfilled');
-      const rejected = results.filter((r) => r.status === 'rejected');
-      expect(fulfilled).toHaveLength(1);
-      expect(rejected).toHaveLength(1);
+      // Wait a moment for process to be fully dead
+      await new Promise((r) => setTimeout(r, 200));
 
-      lockA.release();
-      lockB.release();
+      // Attempt acquisition from parent process:
+      // Under Approach 2, automatic deletion is removed -> MUST FAIL CLOSED
+      const lock = new MigrationLock(dbPath);
+      await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+
+      // Lock file is preserved untouched
+      expect(fs.existsSync(lockFile)).toBe(true);
+      const content = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+      expect(String(content.pid)).toBe(childPid);
+
+      // Operator manual recovery: verify process dead and remove lock file
+      fs.unlinkSync(lockFile);
+
+      // Now acquisition succeeds
+      await expect(lock.acquire(1000, 50)).resolves.toBeUndefined();
+      lock.release();
+      expect(fs.existsSync(lockFile)).toBe(false);
+    });
+
+    it('10. Cross-process release immunity: a different process cannot release an active lock', async () => {
+      const lockFile = `${dbPath}.migration.lock`;
+      const readySignal = path.join(tempDir, 'proc_rel.ready');
+      const exitSignal = path.join(tempDir, 'proc_rel.exit');
+
+      const workerScript = `
+        import { MigrationLock } from './server/migrations/lock.js';
+        import fs from 'node:fs';
+        const lock = new MigrationLock(${JSON.stringify(dbPath)});
+        await lock.acquire(5000);
+        fs.writeFileSync(${JSON.stringify(readySignal)}, lock.getAcquisitionToken());
+        while (!fs.existsSync(${JSON.stringify(exitSignal)})) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+        lock.release();
+        process.exit(0);
+      `;
+
+      const child = spawn(process.execPath, ['--import', 'tsx/esm', '-e', workerScript], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      const startWait = Date.now();
+      while (!fs.existsSync(readySignal) && Date.now() - startWait < 5000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(fs.existsSync(readySignal)).toBe(true);
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // Separate process attempts to release:
+      const intruderScript = `
+        import { MigrationLock } from './server/migrations/lock.js';
+        const lock = new MigrationLock(${JSON.stringify(dbPath)});
+        lock.release();
+        process.exit(0);
+      `;
+      spawnSync(process.execPath, ['--import', 'tsx/esm', '-e', intruderScript]);
+
+      // Lock file must STILL exist because intruder did not hold acquisition token or matching PID
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // Parent process also attempts release without having acquired
+      const parentLock = new MigrationLock(dbPath);
+      parentLock.release();
+      expect(fs.existsSync(lockFile)).toBe(true);
+
+      // Now signal the owning child process to release
+      fs.writeFileSync(exitSignal, 'done');
+      await new Promise<void>((resolve) => {
+        child.on('close', () => resolve());
+      });
+
+      expect(fs.existsSync(lockFile)).toBe(false);
     });
 
     it('11. Same PID, Different Acquisition: old lock object cannot release newer lock acquired by same process', async () => {
@@ -1156,7 +1205,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
 
         // And no staging files linger
         const files = fs.readdirSync(backupDir);
-        expect(files.filter((f) => f.startsWith('.tmp_backup_'))).toHaveLength(0);
+        expect(files.filter((f) => f.startsWith('.tmp_backup_') || f.startsWith('.tmp_staging_'))).toHaveLength(0);
       } finally {
         fsyncSpy.mockRestore();
         fs.unlinkSync(unrelatedBackup);
@@ -1246,6 +1295,134 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
 
       db.close();
+    });
+
+    it('14. Staging Reservation Collision: pre-existing staging directory fails closed and preserves sentinel byte-for-byte', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const fixedAttemptId = 'fixed-staging-collision-uuid';
+      const collidingStagingDir = path.join(backupDir, `.tmp_staging_${fixedAttemptId}`);
+      fs.mkdirSync(collidingStagingDir);
+
+      const sentinelFile = path.join(collidingStagingDir, 'sentinel.txt');
+      const SENTINEL_DATA = 'PRE_EXISTING_STAGING_SENTINEL_NEVER_DELETE_BYTE_FOR_BYTE';
+      fs.writeFileSync(sentinelFile, SENTINEL_DATA);
+
+      const uuidSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedAttemptId as any);
+
+      try {
+        await expect(createWalSafeBackup(db, dbPath, 2)).rejects.toThrow(MigrationBackupError);
+
+        // Pre-existing staging directory and sentinel MUST remain intact!
+        expect(fs.existsSync(collidingStagingDir)).toBe(true);
+        expect(fs.existsSync(sentinelFile)).toBe(true);
+        expect(fs.readFileSync(sentinelFile, 'utf8')).toBe(SENTINEL_DATA);
+      } finally {
+        uuidSpy.mockRestore();
+        fs.rmSync(collidingStagingDir, { recursive: true, force: true });
+        db.close();
+      }
+    });
+
+    it('15. Publication Boundary Collision: destination collision at promotion boundary fails safely and preserves destination sentinel', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const fixedSalt = Buffer.from('aabbccddeeff0011', 'hex');
+      const origRandomBytes = crypto.randomBytes;
+      const saltSpy = vi.spyOn(crypto, 'randomBytes').mockImplementation((size: number) => {
+        if (size === 8) return fixedSalt;
+        return origRandomBytes(size);
+      });
+
+      const fixedTime = new Date('2026-11-10T14:00:00.000Z');
+      vi.useFakeTimers();
+      vi.setSystemTime(fixedTime);
+
+      const timestamp = fixedTime.toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z');
+      const collisionFilename = `nexora.sqlite.bak_${timestamp}_${fixedSalt.toString('hex')}_pre_v2.sqlite`;
+      const collisionPath = path.join(backupDir, collisionFilename);
+
+      // Intercept linkSync / copyFileSync: simulate race where collision file appears right before publication
+      const DEST_SENTINEL = 'DESTINATION_SENTINEL_APPEARED_DURING_STAGING_DO_NOT_CLOBBER';
+      const origLinkSync = fs.linkSync;
+      const origCopyFileSync = fs.copyFileSync;
+
+      let injectedCollision = false;
+      const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation((src: fs.PathLike, dest: fs.PathLike) => {
+        if (typeof dest === 'string' && dest === collisionPath) {
+          injectedCollision = true;
+          fs.writeFileSync(collisionPath, DEST_SENTINEL);
+        }
+        return origLinkSync(src, dest);
+      });
+
+      const copySpy = vi.spyOn(fs, 'copyFileSync').mockImplementation((src: fs.PathLike, dest: fs.PathLike, flags?: number) => {
+        if (typeof dest === 'string' && dest === collisionPath && !fs.existsSync(collisionPath)) {
+          injectedCollision = true;
+          fs.writeFileSync(collisionPath, DEST_SENTINEL);
+        }
+        return origCopyFileSync(src, dest, flags);
+      });
+
+      try {
+        await expect(createWalSafeBackup(db, dbPath, 2)).rejects.toThrow(MigrationBackupError);
+        expect(injectedCollision).toBe(true);
+
+        // Destination sentinel MUST exist and be byte-for-byte identical (never clobbered!)
+        expect(fs.existsSync(collisionPath)).toBe(true);
+        expect(fs.readFileSync(collisionPath, 'utf8')).toBe(DEST_SENTINEL);
+      } finally {
+        linkSpy.mockRestore();
+        copySpy.mockRestore();
+        saltSpy.mockRestore();
+        vi.useRealTimers();
+        if (fs.existsSync(collisionPath)) fs.unlinkSync(collisionPath);
+        db.close();
+      }
+    });
+
+    it('16. Directory Durability Error Classification: unexpected storage I/O failure (EIO) throws MigrationBackupError and aborts migration', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      // Spy on fs.fsyncSync: allow file fsync to succeed, but throw EIO when called on directory fd
+      const origFsyncSync = fs.fsyncSync;
+      let dirFsyncAttempted = false;
+
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation((fd: number) => {
+        // We know backup file is opened first, directory fd is opened second
+        // Check if directory sync throws EIO
+        if (dirFsyncAttempted) {
+          const err: any = new Error('Simulated hardware I/O storage controller failure on directory sync');
+          err.code = 'EIO';
+          throw err;
+        }
+        dirFsyncAttempted = true;
+        return origFsyncSync(fd);
+      });
+
+      try {
+        await expect(runMigrations(db)).rejects.toThrow(MigrationBackupError);
+        expect(dirFsyncAttempted).toBe(true);
+
+        // Database was NOT modified because directory storage I/O failure aborts migration
+        const checkRegistry = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations';").get();
+        expect(checkRegistry).toBeUndefined();
+      } finally {
+        fsyncSpy.mockRestore();
+        db.close();
+      }
     });
   });
 

@@ -10,20 +10,23 @@ export type { BackupResult };
  * Creates a transactionally consistent, WAL-safe online backup of a file-backed SQLite database
  * using Node.js 24's native `backup()` API.
  *
- * Safety & Ownership Invariants (Step 02.1.3):
+ * Safety & Ownership Invariants (Step 02.1.4):
  * 1. Fail-Closed Validation:
  *    - In-memory databases throw MigrationBackupError immediately.
  *    - Source file must exist on disk before backup.
- * 2. Collision-Resistant Cryptographic Naming:
- *    - Uses ISO timestamp + 64-bit cryptographic salt + target version.
- * 3. Strict Artifact Ownership:
- *    - Streams backup to a unique, attempt-owned staging file (.tmp_backup_<UUID>.sqlite).
- *    - On collision with a pre-existing destination, the pre-existing file is NEVER unlinked.
- *    - Cleanup handles ONLY artifacts owned and created by the current attempt.
- * 4. Fail-Closed Durability Synchronization:
- *    - Opens backup with 'r+' for Win32 FlushFileBuffers / POSIX fsync compatibility.
- *    - If file fsync fails, throws MigrationBackupError (migrations abort before database mutation).
- *    - Attempts directory sync on POSIX, records OS limitation on Windows (directorySynced: false).
+ * 2. Exclusive Staging Ownership (Objective C):
+ *    - Creates an attempt-owned private staging directory (.tmp_staging_<UUID>) using non-recursive mkdir.
+ *    - Pre-creates and reserves the staging file exclusively with 'wx' before sqlite.backup() is invoked.
+ *    - If staging reservation collides with an existing file/directory, fails closed without modifying it.
+ *    - Cleanup removes ONLY artifacts created and owned by this attempt.
+ * 3. Atomic No-Clobber Publication (Objective D):
+ *    - Publishes the verified backup using a strictly no-clobber primitive (linkSync or copyFileSync with COPYFILE_EXCL).
+ *    - A collision at the publication boundary throws MigrationBackupError without modifying the destination.
+ *    - Pre-existing files and collision sentinels are preserved byte-for-byte.
+ * 4. Durability Synchronization & Error Classification (Objective F):
+ *    - File fsync is mandatory and fail-closed: if file fsync fails, throws MigrationBackupError before database mutation.
+ *    - Directory fsync distinguishes known OS/filesystem limitations (e.g. Win32 EPERM/EISDIR on directory handles)
+ *      from true storage I/O failures (e.g. EIO, ENOSPC). True storage failures fail closed.
  * 5. Integrity & Parity Verification:
  *    - Verifies pagesCopied > 0, stat size > 0, PRAGMA integrity_check, PRAGMA quick_check,
  *      and exact source table and record count parity.
@@ -52,7 +55,10 @@ export async function createWalSafeBackup(
 
   const dbDir = path.dirname(dbLocation);
   const backupDir = path.join(dbDir, 'backups');
-  let ownedArtifactPath: string | null = null;
+
+  let ownedStagingDir: string | null = null;
+  let ownedStagingFile: string | null = null;
+  let ownedFinalBackupPath: string | null = null;
 
   try {
     if (!fs.existsSync(backupDir)) {
@@ -66,43 +72,69 @@ export async function createWalSafeBackup(
     const finalFilename = `nexora.sqlite.bak_${timestamp}_${salt}_pre_v${targetVersion}.sqlite`;
     const finalBackupPath = path.join(backupDir, finalFilename);
 
-    // If destination already exists prior to backup, reject with MigrationBackupError.
-    // Notice: ownedArtifactPath is still null, guaranteeing pre-existing file is never touched.
+    // Initial check: if destination already exists prior to backup, reject immediately
     if (fs.existsSync(finalBackupPath)) {
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     }
 
-    // Use a unique, attempt-owned staging file for streaming backup
+    // Objective C: Exclusive Staging Ownership
+    // 1. Create a private attempt staging directory using non-recursive mkdir.
+    // If stagingDir already exists, mkdirSync throws EEXIST and ownedStagingDir remains null.
     const attemptId = crypto.randomUUID();
-    const stagingPath = path.join(backupDir, `.tmp_backup_${attemptId}.sqlite`);
-    ownedArtifactPath = stagingPath;
+    const stagingDir = path.join(backupDir, `.tmp_staging_${attemptId}`);
+
+    try {
+      fs.mkdirSync(stagingDir);
+    } catch (mkdirErr: any) {
+      if (mkdirErr?.code === 'EEXIST') {
+        throw new MigrationBackupError(`Staging reservation collision: directory already exists: ${stagingDir}`);
+      }
+      throw mkdirErr;
+    }
+
+    // Directory successfully created exclusively by this attempt
+    ownedStagingDir = stagingDir;
+
+    // 2. Pre-create and reserve staging file exclusively using 'wx' flag
+    const stagingFile = path.join(stagingDir, 'staging.sqlite');
+    try {
+      const stagingFd = fs.openSync(stagingFile, 'wx');
+      fs.closeSync(stagingFd);
+    } catch (openErr: any) {
+      if (openErr?.code === 'EEXIST') {
+        throw new MigrationBackupError(`Staging reservation collision: file already exists: ${stagingFile}`);
+      }
+      throw openErr;
+    }
+
+    ownedStagingFile = stagingFile;
 
     // Execute native online backup API - Node.js 24 returns total pages copied
-    const pagesCopied = await backup(db, stagingPath);
+    const pagesCopied = await backup(db, stagingFile);
 
     if (typeof pagesCopied !== 'number' || pagesCopied <= 0) {
       throw new MigrationBackupError(`WAL backup failed: non-positive page count returned (${pagesCopied})`);
     }
 
     // Verify file existence and positive byte count
-    if (!fs.existsSync(stagingPath)) {
-      throw new MigrationBackupError(`Backup file was not created on disk: ${stagingPath}`);
+    if (!fs.existsSync(stagingFile)) {
+      throw new MigrationBackupError(`Backup file was not created on disk: ${stagingFile}`);
     }
 
-    const stat = fs.statSync(stagingPath);
+    const stat = fs.statSync(stagingFile);
     if (stat.size === 0) {
-      throw new MigrationBackupError(`Backup file was created with 0 bytes: ${stagingPath}`);
+      throw new MigrationBackupError(`Backup file was created with 0 bytes: ${stagingFile}`);
     }
 
     // Verify database integrity on the backup file and record parity with source
-    verifyBackupIntegrity(stagingPath, db);
+    verifyBackupIntegrity(stagingFile, db);
 
-    // Durability synchronization on backup file:
+    // Objective F: Durability synchronization on staging file
     // Open with 'r+' so FlushFileBuffers succeeds on Win32 and fsync on POSIX.
-    // If file fsync fails, FAIL CLOSED: do not allow migrations to proceed without durable backup.
+    // If file fsync fails, FAIL CLOSED: abort migration before database mutation.
     let fileSynced = false;
     try {
-      const fd = fs.openSync(stagingPath, 'r+');
+      const fd = fs.openSync(stagingFile, 'r+');
       try {
         fs.fsyncSync(fd);
         fileSynced = true;
@@ -116,23 +148,72 @@ export async function createWalSafeBackup(
       );
     }
 
-    // Promote verified staging file to final backup destination.
-    // Check destination again to catch any collision created during staging:
+    // Objective D: Atomic No-Clobber Final Backup Publication
+    // Check destination again before promotion to catch pre-publication collisions
     if (fs.existsSync(finalBackupPath)) {
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     }
 
+    let published = false;
     try {
-      fs.renameSync(stagingPath, finalBackupPath);
-      ownedArtifactPath = finalBackupPath;
-    } catch (renameErr: any) {
+      // First attempt: atomic hard-link publication
+      fs.linkSync(stagingFile, finalBackupPath);
+      published = true;
+    } catch (linkErr: any) {
+      if (linkErr?.code === 'EEXIST') {
+        throw new MigrationBackupError(
+          `Backup destination already exists (collision at publication boundary): ${finalBackupPath}`
+        );
+      }
+
+      // If hard links are not supported or permitted on this OS/filesystem (e.g. Win32 EPERM, EXDEV, ENOSYS, ENOTSUP),
+      // use atomic no-clobber copy (COPYFILE_EXCL). COPYFILE_EXCL is guaranteed by OS kernel to fail if dest exists.
+      if (['EPERM', 'EXDEV', 'ENOSYS', 'ENOTSUP', 'EINVAL'].includes(linkErr?.code)) {
+        try {
+          fs.copyFileSync(stagingFile, finalBackupPath, fs.constants.COPYFILE_EXCL);
+          published = true;
+        } catch (copyErr: any) {
+          if (copyErr?.code === 'EEXIST') {
+            throw new MigrationBackupError(
+              `Backup destination already exists (collision at publication boundary): ${finalBackupPath}`
+            );
+          }
+          throw new MigrationBackupError(
+            `Failed to publish backup to ${finalBackupPath} using no-clobber copy: ${copyErr?.message}`,
+            copyErr
+          );
+        }
+      } else {
+        throw new MigrationBackupError(
+          `Failed to publish backup to ${finalBackupPath} via link: ${linkErr?.message}`,
+          linkErr
+        );
+      }
+    }
+
+    if (!published) {
+      throw new MigrationBackupError(`Failed to publish backup to ${finalBackupPath}: unknown publication failure`);
+    }
+
+    // Mark final backup as owned
+    ownedFinalBackupPath = finalBackupPath;
+
+    // Fsync the final backup file to ensure metadata/data durability at final destination
+    try {
+      const finalFd = fs.openSync(finalBackupPath, 'r+');
+      try {
+        fs.fsyncSync(finalFd);
+      } finally {
+        fs.closeSync(finalFd);
+      }
+    } catch (finalFsyncErr: any) {
       throw new MigrationBackupError(
-        `Failed to promote staging backup file to ${finalBackupPath}: ${renameErr?.message}`,
-        renameErr
+        `Failed to fsync published backup file at ${finalBackupPath}: ${finalFsyncErr?.message}`,
+        finalFsyncErr
       );
     }
 
-    // Directory synchronization where supported by OS/filesystem (POSIX)
+    // Objective F: Directory synchronization with explicit error classification
     let directorySynced = false;
     try {
       const dirFd = fs.openSync(backupDir, 'r');
@@ -142,9 +223,42 @@ export async function createWalSafeBackup(
       } finally {
         fs.closeSync(dirFd);
       }
-    } catch {
-      // Documented limitation: directory fsync is unsupported on Windows (Win32) and throws EPERM/EISDIR
-      directorySynced = false;
+    } catch (dirErr: any) {
+      const isKnownWin32Limitation =
+        process.platform === 'win32' && ['EPERM', 'EISDIR', 'EBADF', 'EACCES'].includes(dirErr?.code);
+      const isKnownFsLimitation = ['ENOTSUP', 'ENOSYS', 'EINVAL'].includes(dirErr?.code);
+
+      if (isKnownWin32Limitation || isKnownFsLimitation) {
+        // Documented platform/filesystem limitation: directory fsync is unsupported by OS
+        directorySynced = false;
+      } else {
+        // True storage I/O failure (e.g. EIO, ENOSPC, EROFS, EDQUOT):
+        // FAIL CLOSED: do not silently swallow true storage hardware failures!
+        throw new MigrationBackupError(
+          `Storage I/O failure during directory synchronization on ${backupDir}: ${dirErr?.message}`,
+          dirErr
+        );
+      }
+    }
+
+    // Clean up staging directory and staging files after successful publication
+    if (ownedStagingFile) {
+      for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
+        try {
+          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
+        } catch {
+          // Ignore staging cleanup error
+        }
+      }
+      ownedStagingFile = null;
+    }
+    if (ownedStagingDir) {
+      try {
+        if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
+      } catch {
+        // Ignore staging directory cleanup error
+      }
+      ownedStagingDir = null;
     }
 
     return {
@@ -157,25 +271,40 @@ export async function createWalSafeBackup(
     };
   } catch (err: any) {
     // Artifact Ownership Rule:
-    // Only clean up the artifact that was created and owned by this attempt.
-    // Never touch or delete pre-existing backup files or collision sentinels.
-    if (ownedArtifactPath) {
-      for (const artifact of [ownedArtifactPath, `${ownedArtifactPath}-wal`, `${ownedArtifactPath}-shm`]) {
+    // Only clean up the artifacts that were created and owned by this attempt.
+    // Never touch or delete pre-existing backup files, collision sentinels, or other attempts' directories.
+    if (ownedFinalBackupPath) {
+      for (const artifact of [ownedFinalBackupPath, `${ownedFinalBackupPath}-wal`, `${ownedFinalBackupPath}-shm`]) {
         try {
-          if (fs.existsSync(artifact)) {
-            fs.unlinkSync(artifact);
-          }
+          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
         } catch {
-          // Ignore cleanup failure on attempt-owned file
+          // Ignore cleanup error on attempt-owned final file
         }
       }
     }
+
+    if (ownedStagingFile) {
+      for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
+        try {
+          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
+        } catch {
+          // Ignore cleanup error on attempt-owned staging file
+        }
+      }
+    }
+
+    if (ownedStagingDir) {
+      try {
+        if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
+      } catch {
+        // Ignore cleanup error on attempt-owned staging directory
+      }
+    }
+
     if (err instanceof MigrationBackupError) throw err;
     throw new MigrationBackupError(`WAL backup creation failed for ${dbLocation}: ${err?.message}`, err);
   }
-}
-
-/**
+}/**
  * Verifies integrity of a backup SQLite file using PRAGMA integrity_check and PRAGMA quick_check,
  * and confirms that all committed source tables and row counts are preserved.
  */
@@ -266,3 +395,4 @@ export function pruneOldBackups(backupDir: string, retainCount = 5): void {
     // Ignore pruning errors
   }
 }
+

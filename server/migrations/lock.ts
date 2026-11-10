@@ -12,28 +12,34 @@ export interface LockInfo {
   dbPath: string;
 }
 
-const memoryLocks = new Set<string>();
+const memoryLocks = new Map<string, LockInfo>();
 
 /**
  * MigrationLock provides exclusive acquisition, bounded waiting, and safe release
  * for database migration execution.
  *
- * Mutual-Exclusion Governance (Step 02.1.3):
- * 1. Lock acquisition uses exclusive file creation ('wx').
- * 2. Each successful acquisition generates a unique cryptographic acquisition token (UUID).
- * 3. Locks are NEVER removed solely because of age. Active processes on the same host are never considered stale.
- * 4. Stale removal is permitted ONLY for confirmed dead PIDs on the same host (ESRCH).
- * 5. Pre-Claim Snapshot Verification:
- *    - Re-reads lock file immediately prior to isolation. If content changed, aborts without moving.
- * 6. Atomic Isolation & Post-Isolation Verification:
- *    - Atomically renames stale candidate to unique isolated path (fs.renameSync).
- *    - If reading isolated candidate fails, immediately executes safe restore so main path is never left unprotected.
- *    - Re-verifies content against snapshot. If content differs (TOCTOU race), executes safe restore.
- * 7. Non-Overwriting Safe Restore:
- *    - When restoring, if original lock path already contains a lock, NEVER overwrites it.
- * 8. Strict Token Release Verification:
- *    - release() deletes lock file ONLY if token, PID, and hostname match this specific acquisition instance.
- * 9. Foreign host locks, uncertain ownership, legacy tokenless files, or malformed data fail closed.
+ * Mutual-Exclusion Governance (Step 02.1.4 - Approach 2: Conservative Fail-Closed Recovery):
+ * 1. Exclusive Acquisition Primitive:
+ *    - Uses exclusive file creation flag ('wx') on the filesystem.
+ *    - OS kernel guarantees atomic creation across all processes (Windows CREATE_NEW, POSIX O_CREAT|O_EXCL).
+ * 2. Cryptographic Acquisition Token:
+ *    - Each successful acquisition generates a unique cryptographic UUID token.
+ * 3. Conservative Fail-Closed Recovery (Eliminates Check-Then-Rename Race):
+ *    - Automatic deletion/reclamation of existing lock files is completely disabled.
+ *    - No process ever inspects, renames, unlinks, or modifies another process's lock file.
+ *    - If a lock file exists, acquire() retries until timeoutMs, then fails closed with MigrationLockError.
+ *    - Detailed holder information (PID, hostname, acquiredAt, dbPath) is reported in the error message.
+ *    - Manual Operator Recovery Policy: If a process terminates abnormally or host crashes, the operator
+ *      must verify the process is no longer running (via ps/Task Manager) and manually remove the lock file.
+ * 4. Strict Token-Verified Release:
+ *    - release() deletes the lock file ONLY if:
+ *      a) the file exists and is valid JSON,
+ *      b) owner.token === this.acquisitionToken,
+ *      c) owner.pid === process.pid,
+ *      d) owner.hostname === os.hostname().
+ *    - A different process, earlier acquisition instance, or foreign host cannot release the lock.
+ * 5. Parity between In-Memory and File Locks:
+ *    - In-memory locks use Map<string, LockInfo> enforcing the identical token-matching release contract.
  */
 export class MigrationLock {
   private readonly lockFilePath: string | null;
@@ -70,16 +76,23 @@ export class MigrationLock {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
-    // Attempt one last time or report failure with ownership details
+    // Final attempt before reporting failure
     if (this.tryAcquireOnce()) {
       this.acquired = true;
       return;
     }
 
     const currentOwner = this.readLockOwner();
+    const holderDescription = currentOwner
+      ? `PID ${currentOwner.pid} on host "${currentOwner.hostname}" since ${currentOwner.acquiredAt} (token: ${currentOwner.token})`
+      : 'unknown or unparseable lock file';
+
     throw new MigrationLockError(
       `Could not acquire migration lock for ${this.lockKey} within ${timeoutMs}ms. ` +
-      `Current lock holder: ${JSON.stringify(currentOwner ?? 'unknown')}`
+      `Lock is currently held by ${holderDescription}. ` +
+      `Automatic stale-lock deletion is disabled for safety. ` +
+      `If the owning process crashed or terminated abnormally, verify process liveness and manually remove ` +
+      `the lock file "${this.lockFilePath}" before re-running migrations.`
     );
   }
 
@@ -91,7 +104,10 @@ export class MigrationLock {
     if (!this.acquired || !this.acquisitionToken) return;
 
     if (this.isMemory) {
-      memoryLocks.delete(this.lockKey);
+      const existing = memoryLocks.get(this.lockKey);
+      if (existing && existing.token === this.acquisitionToken) {
+        memoryLocks.delete(this.lockKey);
+      }
     } else if (this.lockFilePath) {
       try {
         if (fs.existsSync(this.lockFilePath)) {
@@ -116,17 +132,37 @@ export class MigrationLock {
     this.acquisitionToken = null;
   }
 
+  /**
+   * Returns the unique acquisition token if currently acquired by this instance.
+   */
+  getAcquisitionToken(): string | null {
+    return this.acquisitionToken;
+  }
+
   private tryAcquireOnce(): boolean {
+    const token = crypto.randomUUID();
+
     if (this.isMemory) {
       if (memoryLocks.has(this.lockKey)) {
         return false;
       }
-      this.acquisitionToken = crypto.randomUUID();
-      memoryLocks.add(this.lockKey);
+      const lockPayload: LockInfo = {
+        token,
+        pid: process.pid,
+        hostname: os.hostname(),
+        acquiredAt: new Date().toISOString(),
+        dbPath: this.lockKey,
+      };
+      memoryLocks.set(this.lockKey, lockPayload);
+      this.acquisitionToken = token;
+      this.acquired = true;
       return true;
     }
 
-    if (!this.lockFilePath) return true;
+    if (!this.lockFilePath) {
+      this.acquired = true;
+      return true;
+    }
 
     try {
       const lockDir = path.dirname(this.lockFilePath);
@@ -134,7 +170,6 @@ export class MigrationLock {
         fs.mkdirSync(lockDir, { recursive: true });
       }
 
-      const token = crypto.randomUUID();
       const lockPayload: LockInfo = {
         token,
         pid: process.pid,
@@ -146,218 +181,20 @@ export class MigrationLock {
       // Use 'wx' flag (exclusive creation) for atomic file lock
       fs.writeFileSync(this.lockFilePath, JSON.stringify(lockPayload, null, 2), { flag: 'wx' });
       this.acquisitionToken = token;
+      this.acquired = true;
       return true;
     } catch (err: any) {
       if (err?.code === 'EEXIST') {
-        // Inspect lock file for staleness under strict safety rules
-        this.handleExistingLockFile();
+        // Lock already held by another process or instance -> fail-closed waiting
         return false;
       }
       throw new MigrationLockError(`Filesystem error acquiring lock at ${this.lockFilePath}: ${err.message}`);
     }
   }
 
-  /**
-   * Handles an existing lock file.
-   * Stale removal is ONLY permitted if the process is confirmed dead on the SAME host (ESRCH).
-   *
-   * Race-Safe Atomic Reclamation Protocol:
-   * 1. Inspect lock owner and confirm ESRCH on same host.
-   * 2. Snapshot dead content. Re-verify lockFilePath content immediately before claim.
-   * 3. Atomically rename dead lock file to isolated reclaim path.
-   * 4. Verify candidate file in isolation. On read failure, restore file to prevent leaving system open.
-   * 5. If content matches snapshot, unlink isolated candidate.
-   * 6. If content mismatch detected, execute safe restore without overwriting newer destination lock.
-   */
-  private handleExistingLockFile(): void {
-    if (!this.lockFilePath || !fs.existsSync(this.lockFilePath)) {
-      return;
-    }
-
-    let rawContent: string;
-    try {
-      rawContent = fs.readFileSync(this.lockFilePath, 'utf8');
-    } catch {
-      return;
-    }
-
-    let owner: LockInfo;
-    try {
-      owner = JSON.parse(rawContent);
-    } catch {
-      // Malformed lock data: fail closed (do NOT delete automatically)
-      return;
-    }
-
-    if (
-      typeof owner?.token !== 'string' ||
-      owner.token.trim().length === 0 ||
-      typeof owner?.pid !== 'number' ||
-      typeof owner?.hostname !== 'string' ||
-      typeof owner?.acquiredAt !== 'string'
-    ) {
-      // Missing token, legacy lock schema, or malformed fields: fail closed
-      return;
-    }
-
-    // Foreign host: ownership cannot be safely verified locally -> fail closed
-    if (owner.hostname !== os.hostname()) {
-      return;
-    }
-
-    // Same host: test if process exists using process.kill(pid, 0)
-    let isAlive = false;
-    try {
-      process.kill(owner.pid, 0);
-      isAlive = true;
-    } catch (e: any) {
-      if (e.code === 'EPERM') {
-        // Process exists (permission denied to signal) -> active!
-        isAlive = true;
-      } else if (e.code === 'ESRCH') {
-        // Process does not exist -> confirmed dead!
-        isAlive = false;
-      } else {
-        // Uncertain error -> fail closed
-        isAlive = true;
-      }
-    }
-
-    // Rule: Never remove a lock solely because it is old if owner is alive
-    if (isAlive) {
-      return;
-    }
-
-    // Owning process is confirmed dead (ESRCH) on this host.
-    const staleSnapshot = rawContent;
-
-    // Pre-claim verification: ensure lock file on disk still matches our inspected snapshot
-    let currentRaw: string;
-    try {
-      currentRaw = fs.readFileSync(this.lockFilePath, 'utf8');
-    } catch {
-      return;
-    }
-
-    if (currentRaw !== staleSnapshot) {
-      // Lock changed between inspection and claim!
-      // An active process or another reclaimer has replaced it -> do NOT touch!
-      return;
-    }
-
-    // Execute atomic isolation rename:
-    const salt = crypto.randomBytes(4).toString('hex');
-    const reclaimPath = `${this.lockFilePath}.reclaim_${process.pid}_${Date.now()}_${salt}`;
-
-    try {
-      fs.renameSync(this.lockFilePath, reclaimPath);
-    } catch (err: any) {
-      if (err?.code === 'ENOENT') {
-        // Another concurrent process already claimed or removed the dead lock file safely
-        return;
-      }
-      // Any other filesystem error -> fail closed
-      return;
-    }
-
-    // Post-isolation verification
-    let reclaimedContent: string;
-    try {
-      reclaimedContent = fs.readFileSync(reclaimPath, 'utf8');
-    } catch {
-      // Read failure after isolation: MUST NOT leave system unprotected!
-      this.safeRestoreLock(reclaimPath);
-      return;
-    }
-
-    if (reclaimedContent === staleSnapshot) {
-      // Confirmed: we exclusively and atomically claimed the dead lock. Unlink isolated candidate.
-      try {
-        fs.unlinkSync(reclaimPath);
-      } catch {
-        // Ignore unlink error on isolated candidate
-      }
-    } else {
-      // TOCTOU Avoidance: A new lock replaced the dead lock right at the moment of rename!
-      // Restore without overwriting any newer lock at destination.
-      this.safeRestoreLock(reclaimPath);
-    }
-  }
-
-  /**
-   * Restores an isolated candidate lock back to the original lock file path safely.
-   * Guarantees that if the destination path already contains a lock (newer lock created concurrently),
-   * the destination is NEVER overwritten.
-   */
-  private safeRestoreLock(candidatePath: string): void {
-    if (!this.lockFilePath) return;
-
-    try {
-      // If destination already exists (e.g. active process created a newer lock during reclamation),
-      // do NOT overwrite it! Active lock already protects database.
-      if (fs.existsSync(this.lockFilePath)) {
-        try {
-          fs.unlinkSync(candidatePath);
-        } catch {
-          // Ignore unlink error
-        }
-        return;
-      }
-
-      // Try linkSync first: fails with EEXIST if destination was created concurrently
-      try {
-        fs.linkSync(candidatePath, this.lockFilePath);
-        try {
-          fs.unlinkSync(candidatePath);
-        } catch {
-          // Ignore cleanup error
-        }
-      } catch (linkErr: any) {
-        if (linkErr?.code === 'EEXIST') {
-          // Destination was created concurrently! Do not overwrite!
-          try {
-            fs.unlinkSync(candidatePath);
-          } catch {
-            // Ignore cleanup error
-          }
-          return;
-        }
-
-        // Fallback for filesystems that do not support hard links:
-        if (!fs.existsSync(this.lockFilePath)) {
-          try {
-            fs.renameSync(candidatePath, this.lockFilePath);
-          } catch {
-            try {
-              fs.unlinkSync(candidatePath);
-            } catch {
-              // Ignore cleanup error
-            }
-          }
-        } else {
-          try {
-            fs.unlinkSync(candidatePath);
-          } catch {
-            // Ignore cleanup error
-          }
-        }
-      }
-    } catch {
-      // Fail closed
-    }
-  }
-
   private readLockOwner(): LockInfo | null {
     if (this.isMemory) {
-      return memoryLocks.has(this.lockKey)
-        ? {
-            token: this.acquisitionToken ?? 'in-memory-token',
-            pid: process.pid,
-            hostname: os.hostname(),
-            acquiredAt: 'in-memory',
-            dbPath: this.lockKey,
-          }
-        : null;
+      return memoryLocks.get(this.lockKey) ?? null;
     }
 
     if (!this.lockFilePath || !fs.existsSync(this.lockFilePath)) return null;
