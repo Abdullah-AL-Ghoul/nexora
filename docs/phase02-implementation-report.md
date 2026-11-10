@@ -1,6 +1,6 @@
 # NEXORA — Phase 02 Implementation Report
-**Step 02.1, Step 02.1.1, Step 02.1.2, Step 02.1.3, Step 02.1.4 & Step 02.1.5 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability & Strict Atomic Publication Safety Closure**  
-*Document Version:* 1.5.0  
+**Step 02.1 through Step 02.1.6 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability, Direct Inspection & Strict Atomic Publication Safety Closure**  
+*Document Version:* 1.6.0  
 *Execution Date:* November 2026  
 *Branch:* `main`  
 *Step 02.1 Approved Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
@@ -8,30 +8,32 @@
 *Step 02.1.2 Approved Baseline Commit:* `74efc003cff99fe9586e10663405c2f5a937be6e`  
 *Step 02.1.3 Approved Baseline Commit:* `f55b582ad75a80ed59d7e08e3a9cb8dc9297b559`  
 *Step 02.1.4 Approved Baseline Commit:* `a7bb52d0bea98f08ab58d2d9d54b1be5ed6e1fda`  
+*Step 02.1.5 Approved Baseline Commit:* `be42002a9addb1e9223c54955cf50eaad71e9143`  
 *Lead Engineers:* Principal Software Architect, Senior Backend Engineer, Database Reliability Engineer  
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completed implementation and engineering remediation of **STEP 02.1, STEP 02.1.1, STEP 02.1.2, STEP 02.1.3, STEP 02.1.4 & STEP 02.1.5: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Lock Observability & Strict Atomic Publication Safety Closure** for the NEXORA platform.
+This report documents the completed implementation and engineering remediation of **STEP 02.1, STEP 02.1.1, STEP 02.1.2, STEP 02.1.3, STEP 02.1.4, STEP 02.1.5 & STEP 02.1.6: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Direct Storage Inspection & Ownership-Safe Release Closure** for the NEXORA platform.
 
 All critical defects identified during the independent architecture reviews have been resolved with mathematical rigor and evidence-backed verification:
 1. **Backup Ordering Fixed:** The runner was restructured so that a verified WAL-safe backup strictly precedes *any* database mutation, including registry creation (`schema_migrations`), DDL, or DML.
 2. **Read-Only Registry Helpers:** `getAppliedMigrations()` is now strictly read-only and never issues DDL. Registry creation is isolated to `ensureMigrationRegistry()`.
 3. **Lock Concurrency & Cross-Process Mutual Exclusion (Step 02.1.4):** Adopted Approach 2 (Conservative Fail-Closed Recovery), eliminating check-then-rename races. Automatic stale-lock deletion is completely removed; acquisitions fail closed with descriptive `MigrationLockError` reporting holder metadata and manual operator recovery instructions. Real OS child-process contention and abnormal termination (`SIGKILL`) verified green.
-4. **Observable Lock Release Contract (Step 02.1.5):** `release()` returns explicit `LockReleaseResult` (`RELEASED`, `ALREADY_ABSENT`, `NOT_HELD`, `OWNERSHIP_MISMATCH`, `FILESYSTEM_ERROR`). Never deletes foreign locks and preserves tokens on error. In `runMigrations()`, surfaces release failures without masking migration outcomes, and combines compound errors preserving `.cause`.
+4. **Observable Lock Release Contract & Direct Inspection (Step 02.1.5 & Step 02.1.6):** `release()` returns explicit `LockReleaseResult` (`RELEASED`, `ALREADY_ABSENT`, `NOT_HELD`, `OWNERSHIP_MISMATCH`, `FILESYSTEM_ERROR`). Direct `readFileSync` inspection replaces boolean `existsSync` checks, distinguishing confirmed absence (`ENOENT`) from access denial (`EACCES`) and storage errors (`EIO`). Malformed JSON cannot cause deletion. Pre-unlink re-verification guards against ownership replacement races prior to calling `unlinkSync`.
 5. **Exclusive Backup Staging Ownership (Step 02.1.4):** Establishes exclusive staging reservation prior to invoking `sqlite.backup()` via private attempt directories (`.tmp_staging_<UUID>`) created with non-recursive `mkdir` and pre-reserved staging files (`'wx'`).
 6. **Strict Atomic No-Clobber Publication (Step 02.1.5):** Final backup publication exclusively enforces `fs.linkSync`. Removed non-atomic `copyFileSync` fallback; if hard links are unsupported, fails closed with `MigrationBackupError` while preserving the verified staging backup for operator recovery.
-7. **Durability Error Classification (Step 02.1.5):** Distinguishes documented OS limitations (Win32 directory fsync returning `EPERM`/`EISDIR`) from access denial (`EACCES`) and hardware storage failures (`EIO`), both of which fail closed immediately.
-8. **Fail-Closed Backup Contract (Step 02.1.2):** `createWalSafeBackup()` returns `Promise<BackupResult>` (never `null`). Throws `MigrationBackupError` fail-closed if the source database is in-memory or if the file does not exist on disk. Public bypass flags (`backup`, `lock`, `skipIntegrityCheck`) were removed from `MigrationRunnerOptions`.
-9. **Strict Baseline Fingerprint & Metadata Validation:** The baseline validator now extracts full structural metadata (column order, declared types, nullability, defaults, primary keys, and unique indexes) and compares both table-by-table discrepancies and SHA-256 fingerprint against the canonical reference generated from `BASELINE_DDL`.
-10. **Migration Registry Integrity:** The runner validates column definitions, checksum formats (64-char hex SHA-256), unknown versions, duplicate records, and registry sequence gaps (`MigrationRegistryError`).
-11. **Backup Page Count & Record Verification:** The runner captures and asserts the positive page count returned by Node.js 24's native `backup()` API, verifies SQLite integrity (`integrity_check` and `quick_check`), ensures durability via `fsync`, and verifies source table/record count parity in the backup.
-12. **Fail-Closed Path Resolution:** `getDbLocation()` was hardened to throw `MigrationError` rather than silently defaulting to `:memory:`.
-13. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
-14. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
-15. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
+7. **Durability Error Classification (Step 02.1.5 & Step 02.1.6):** Distinguishes documented OS limitations (Win32 directory fsync returning `EPERM`/`EISDIR`) from access denial (`EACCES`) and hardware storage failures (`EIO`), both of which fail closed immediately.
+8. **Backup Artifact Cleanup Invariants (Step 02.1.6):** Cleanup issues direct unlink/rmdir without `existsSync` guards; treats `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains attempt-owned paths on failure; collision sentinels preserved byte-for-byte.
+9. **Fail-Closed Backup Contract (Step 02.1.2):** `createWalSafeBackup()` returns `Promise<BackupResult>` (never `null`). Throws `MigrationBackupError` fail-closed if the source database is in-memory or if the file does not exist on disk. Public bypass flags (`backup`, `lock`, `skipIntegrityCheck`) were removed from `MigrationRunnerOptions`.
+10. **Strict Baseline Fingerprint & Metadata Validation:** The baseline validator now extracts full structural metadata (column order, declared types, nullability, defaults, primary keys, and unique indexes) and compares both table-by-table discrepancies and SHA-256 fingerprint against the canonical reference generated from `BASELINE_DDL`.
+11. **Migration Registry Integrity:** The runner validates column definitions, checksum formats (64-char hex SHA-256), unknown versions, duplicate records, and registry sequence gaps (`MigrationRegistryError`).
+12. **Backup Page Count & Record Verification:** The runner captures and asserts the positive page count returned by Node.js 24's native `backup()` API, verifies SQLite integrity (`integrity_check` and `quick_check`), ensures durability via `fsync`, and verifies source table/record count parity in the backup.
+13. **Fail-Closed Path Resolution:** `getDbLocation()` was hardened to throw `MigrationError` rather than silently defaulting to `:memory:`.
+14. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
+15. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
+16. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
 
 ---
 
@@ -185,27 +187,27 @@ Record counts: { products: 48, users: 5, orders: 6 }
 
 ---
 
-## 5. Summary of Remediation Changes (Step 02.1.1, Step 02.1.2, Step 02.1.3, Step 02.1.4 & Step 02.1.5)
+## 5. Summary of Remediation Changes (Step 02.1.1 through Step 02.1.6)
 
 | File Path | Nature | Description of Remediation |
 |---|---|---|
 | `server/migrations/runner.ts` | **MODIFIED** | Enforced backup-before-mutation ordering; read-only `getAppliedMigrations`; fail-closed `getDbLocation`; lock acquisition before pending evaluation; removed public bypass flags; mandatory verified backup on non-empty persistent DB; fail-closed file fsync verification; preserved durability booleans in result; integrated observable lock release handling |
-| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract; 64-bit cryptographic salt naming; attempt-owned unique staging (`.tmp_staging_<UUID>`); pre-reserved staging file `'wx'`; strict atomic no-clobber publication via `linkSync`; fail-closed on unsupported hard links preserving staging backup; directory durability error classification with `EACCES` fail-closed; cleanup warning tracking |
-| `server/migrations/lock.ts` | **MODIFIED** | Implemented Approach 2 (Conservative Fail-Closed Recovery); removed automatic stale-lock deletion; enforced exclusive acquisition with `'wx'`; unique UUID acquisition token; strict observable token-verified release (`LockReleaseResult`); token and state preservation on error |
+| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract; 64-bit cryptographic salt naming; attempt-owned unique staging (`.tmp_staging_<UUID>`); pre-reserved staging file `'wx'`; strict atomic no-clobber publication via `linkSync`; fail-closed on unsupported hard links preserving staging backup; directory durability error classification with `EACCES` fail-closed; cleanup paths execute direct unlink/rmdir without `existsSync` guards; treats `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim |
+| `server/migrations/lock.ts` | **MODIFIED** | Implemented Approach 2 (Conservative Fail-Closed Recovery); removed automatic stale-lock deletion; enforced exclusive acquisition with `'wx'`; unique UUID acquisition token; strict observable token-verified release (`LockReleaseResult`); direct inspection without boolean `existsSync()`; `readLockOwner()` returns `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); pre-unlink re-verification guards against ownership replacement race; token and state preservation on error |
 | `server/migrations/001_baseline.ts` | **MODIFIED** | Implemented deterministic canonical baseline generation, structural metadata extraction, and fingerprint comparison |
 | `server/migrations/types.ts` | **MODIFIED** | Added `LockReleaseStatus`, `LockReleaseResult`, `MigrationRegistryError`; updated `BackupResult` with `fileSynced`, `directorySynced`, and `cleanupWarnings`; updated `MigrationResult` with durability flags and cleanup warnings |
 | `server/schemas.ts` | **MODIFIED** | Removed `DRAFT` from certification verification status; aligned Zod enums with SQLite CHECK constraints; added media update refinement |
-| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 51 comprehensive regression tests (total: 68 migration tests, 136 total project tests) covering cross-process lock contention, abnormal termination (`SIGKILL`), cross-process release immunity, staging collision, publication collision, directory `EIO` / `EACCES` error classification, observable lock release, and strict atomic hard links |
+| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 59 comprehensive regression tests (total: 76 migration tests, 144 total project tests) covering cross-process lock contention, abnormal termination (`SIGKILL`), cross-process release immunity, direct storage inspection distinguishing ENOENT/EACCES/EIO, deterministic lock replacement race, malformed lock protection, staging collision, publication collision, directory `EIO` / `EACCES` error classification, observable lock release, strict atomic hard links, and direct cleanup invariants |
 | `server/__tests__/models.test.ts` | **MODIFIED** | Added 5 new tests covering certification verification status constraints, admin expiration policy, and media update refinement |
-| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 through Step 02.1.5 defects, fixes, test counts, and evidence |
+| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 through Step 02.1.6 defects, fixes, test counts, and evidence |
 | `docs/phase02-step-02.1.2-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.2 fail-closed backup contract, race-safe lock reclamation, and evidence |
 | `docs/phase02-step-02.1.3-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.3 lock mutual-exclusion proof, artifact ownership, and durability enforcement |
 | `docs/phase02-step-02.1.4-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.4 cross-process lock safety, exclusive staging reservation, no-clobber publication, and durability error classification |
-| `docs/phase02-step-02.1.5-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.5 lock release observability, strict atomic hard-link publication, partial artifact governance, and evidence |
+| `docs/phase02-step-02.1.5-closure-report.md` | **CREATED / UPDATED** | Dedicated closure report detailing Step 02.1.5 & Step 02.1.6 lock release observability, direct storage inspection, ownership replacement race boundaries, strict atomic hard-link publication, backup cleanup invariants, and evidence |
 
 ---
 
 ## 6. Project Clearance & Next Steps
 
-1. **Step 02.1.5 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.5-closure-report.md`.
-2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, cross-process mutual exclusion, strict atomic publication, and baseline detection now proven safe and resilient under automated testing (136 passing tests, 0 failures), the database architecture is fully cleared for controlled migration application in Step 02.2.
+1. **Step 02.1.6 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.5-closure-report.md`.
+2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, cross-process mutual exclusion, direct storage inspection, strict atomic publication, and baseline detection now proven safe and resilient under automated testing (144 passing tests, 0 failures), the database architecture is fully cleared for controlled migration application in Step 02.2.

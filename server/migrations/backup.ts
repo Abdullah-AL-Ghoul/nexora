@@ -19,9 +19,11 @@ export type { BackupResult };
  *    - Pre-creates and reserves the staging file exclusively with 'wx' before sqlite.backup() is invoked.
  *    - If staging reservation collides with an existing file/directory, fails closed without modifying it.
  *    - Cleanup removes ONLY artifacts created and owned by this attempt.
- * 3. Atomic No-Clobber Publication (Objective D):
- *    - Publishes the verified backup using a strictly no-clobber primitive (linkSync or copyFileSync with COPYFILE_EXCL).
+ * 3. Strict Atomic No-Clobber Publication (Objective D):
+ *    - Publishes the verified backup strictly using fs.linkSync (hard link).
  *    - A collision at the publication boundary throws MigrationBackupError without modifying the destination.
+ *    - If the platform/filesystem does not support atomic hard links, fails closed with MigrationBackupError
+ *      and preserves the verified staging artifact for documented operator recovery.
  *    - Pre-existing files and collision sentinels are preserved byte-for-byte.
  * 4. Durability Synchronization & Error Classification (Objective F):
  *    - File fsync is mandatory and fail-closed: if file fsync fails, throws MigrationBackupError before database mutation.
@@ -46,10 +48,19 @@ export async function createWalSafeBackup(
     throw new MigrationBackupError('Cannot create filesystem backup for an in-memory database');
   }
 
-  // Fail closed: source database file must exist on disk before backup
-  if (!fs.existsSync(dbLocation)) {
+  // Fail closed: source database file must exist on disk before backup.
+  // Distinguish confirmed absence (ENOENT) from access denial or other filesystem failures.
+  try {
+    fs.statSync(dbLocation);
+  } catch (statErr: any) {
+    if (statErr?.code === 'ENOENT') {
+      throw new MigrationBackupError(
+        `Source database file does not exist on disk: "${dbLocation}". Cannot perform mandatory migration backup.`
+      );
+    }
     throw new MigrationBackupError(
-      `Source database file does not exist on disk: "${dbLocation}". Cannot perform mandatory migration backup.`
+      `Cannot access source database file "${dbLocation}" (${statErr?.code}): ${statErr?.message}`,
+      statErr
     );
   }
 
@@ -61,8 +72,13 @@ export async function createWalSafeBackup(
   let ownedFinalBackupPath: string | null = null;
 
   try {
-    if (!fs.existsSync(backupDir)) {
+    try {
       fs.mkdirSync(backupDir, { recursive: true });
+    } catch (mkdirErr: any) {
+      throw new MigrationBackupError(
+        `Failed to create backup directory "${backupDir}": ${mkdirErr?.message}`,
+        mkdirErr
+      );
     }
 
     // Generate collision-resistant filename with ISO timestamp and 64-bit cryptographic salt
@@ -73,8 +89,18 @@ export async function createWalSafeBackup(
     const finalBackupPath = path.join(backupDir, finalFilename);
 
     // Initial check: if destination already exists prior to backup, reject immediately
-    if (fs.existsSync(finalBackupPath)) {
+    try {
+      fs.statSync(finalBackupPath);
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
+    } catch (statErr: any) {
+      if (statErr instanceof MigrationBackupError) throw statErr;
+      if (statErr?.code !== 'ENOENT') {
+        throw new MigrationBackupError(
+          `Failed to inspect backup destination "${finalBackupPath}" (${statErr?.code}): ${statErr?.message}`,
+          statErr
+        );
+      }
+      // Confirmed absent (ENOENT) -> safe to proceed
     }
 
     // Objective C: Exclusive Staging Ownership
@@ -117,11 +143,13 @@ export async function createWalSafeBackup(
     }
 
     // Verify file existence and positive byte count
-    if (!fs.existsSync(stagingFile)) {
-      throw new MigrationBackupError(`Backup file was not created on disk: ${stagingFile}`);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(stagingFile);
+    } catch (statErr: any) {
+      throw new MigrationBackupError(`Backup file was not created on disk: ${stagingFile} (${statErr?.message})`, statErr);
     }
 
-    const stat = fs.statSync(stagingFile);
     if (stat.size === 0) {
       throw new MigrationBackupError(`Backup file was created with 0 bytes: ${stagingFile}`);
     }
@@ -151,8 +179,17 @@ export async function createWalSafeBackup(
     // Objective D: Strict Atomic No-Clobber Final Backup Publication (Hard-Link Primitive)
     // fs.linkSync creates an atomic directory entry linking directly to the verified staging file.
     // If destination exists, linkSync fails atomically with EEXIST without modifying destination.
-    if (fs.existsSync(finalBackupPath)) {
+    try {
+      fs.statSync(finalBackupPath);
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
+    } catch (destStatErr: any) {
+      if (destStatErr instanceof MigrationBackupError) throw destStatErr;
+      if (destStatErr?.code !== 'ENOENT') {
+        throw new MigrationBackupError(
+          `Failed to inspect backup destination "${finalBackupPath}" (${destStatErr?.code}): ${destStatErr?.message}`,
+          destStatErr
+        );
+      }
     }
 
     try {
@@ -231,22 +268,35 @@ export async function createWalSafeBackup(
 
     // Clean up staging files after successful atomic publication
     if (ownedStagingFile) {
+      let stagingCleaned = true;
       for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
         try {
-          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
+          fs.unlinkSync(artifact);
         } catch (cleanErr: any) {
-          cleanupWarnings.push(`Failed to remove staging artifact "${artifact}": ${cleanErr?.message}`);
+          if (cleanErr?.code === 'ENOENT') {
+            // Confirmed absent: clean
+            continue;
+          }
+          stagingCleaned = false;
+          cleanupWarnings.push(`Failed to remove staging artifact "${artifact}" (${cleanErr?.code}): ${cleanErr?.message}`);
         }
       }
-      ownedStagingFile = null;
+      if (stagingCleaned) {
+        ownedStagingFile = null;
+      }
     }
 
     if (ownedStagingDir) {
       try {
-        if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
+        fs.rmdirSync(ownedStagingDir);
         ownedStagingDir = null;
       } catch (cleanDirErr: any) {
-        cleanupWarnings.push(`Failed to remove staging directory "${ownedStagingDir}": ${cleanDirErr?.message}`);
+        if (cleanDirErr?.code === 'ENOENT') {
+          // Confirmed absent: clean
+          ownedStagingDir = null;
+        } else {
+          cleanupWarnings.push(`Failed to remove staging directory "${ownedStagingDir}" (${cleanDirErr?.code}): ${cleanDirErr?.message}`);
+        }
       }
     }
 
@@ -266,30 +316,51 @@ export async function createWalSafeBackup(
     // Only clean up the artifacts that were created and owned by this attempt.
     // Never touch or delete pre-existing backup files, collision sentinels, or other attempts' directories.
     if (ownedFinalBackupPath) {
+      let finalCleaned = true;
       for (const artifact of [ownedFinalBackupPath, `${ownedFinalBackupPath}-wal`, `${ownedFinalBackupPath}-shm`]) {
         try {
-          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
+          fs.unlinkSync(artifact);
         } catch (fErr: any) {
-          cleanupFailures.push(`Failed to remove unverified published artifact "${artifact}": ${fErr?.message}`);
+          if (fErr?.code === 'ENOENT') {
+            continue;
+          }
+          finalCleaned = false;
+          cleanupFailures.push(`Failed to remove unverified published artifact "${artifact}" (${fErr?.code}): ${fErr?.message}`);
         }
+      }
+      if (finalCleaned) {
+        ownedFinalBackupPath = null;
       }
     }
 
     if (ownedStagingFile) {
+      let stagingCleaned = true;
       for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
         try {
-          if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
+          fs.unlinkSync(artifact);
         } catch (sErr: any) {
-          cleanupFailures.push(`Failed to remove staging file "${artifact}": ${sErr?.message}`);
+          if (sErr?.code === 'ENOENT') {
+            continue;
+          }
+          stagingCleaned = false;
+          cleanupFailures.push(`Failed to remove staging file "${artifact}" (${sErr?.code}): ${sErr?.message}`);
         }
+      }
+      if (stagingCleaned) {
+        ownedStagingFile = null;
       }
     }
 
     if (ownedStagingDir) {
       try {
-        if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
+        fs.rmdirSync(ownedStagingDir);
+        ownedStagingDir = null;
       } catch (dErr: any) {
-        cleanupFailures.push(`Failed to remove staging directory "${ownedStagingDir}": ${dErr?.message}`);
+        if (dErr?.code === 'ENOENT') {
+          ownedStagingDir = null;
+        } else {
+          cleanupFailures.push(`Failed to remove staging directory "${ownedStagingDir}" (${dErr?.code}): ${dErr?.message}`);
+        }
       }
     }
 
@@ -376,10 +447,15 @@ export function verifyBackupIntegrity(backupPath: string, sourceDb?: DatabaseSyn
  */
 export function pruneOldBackups(backupDir: string, retainCount = 5): void {
   try {
-    if (!fs.existsSync(backupDir)) return;
+    let dirEntries: string[];
+    try {
+      dirEntries = fs.readdirSync(backupDir);
+    } catch (readDirErr: any) {
+      if (readDirErr?.code === 'ENOENT') return;
+      throw readDirErr;
+    }
 
-    const files = fs
-      .readdirSync(backupDir)
+    const files = dirEntries
       .filter((f) => f.startsWith('nexora.sqlite.bak_') && f.endsWith('.sqlite'))
       .map((f) => {
         const fullPath = path.join(backupDir, f);

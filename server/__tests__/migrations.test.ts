@@ -1102,6 +1102,187 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         db.close();
       }
     });
+
+    it('19. Direct lock inspection distinguishes confirmed ENOENT from EACCES and EIO filesystem errors', async () => {
+      const lock = new MigrationLock(dbPath);
+      // Not yet created -> readLockOwner returns ABSENT
+      const absentInspection = lock.readLockOwner();
+      expect(absentInspection.status).toBe('ABSENT');
+      expect(absentInspection.owner).toBeNull();
+
+      // Acquire lock
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      expect(token).toBeDefined();
+
+      const origReadFileSync = fs.readFileSync;
+
+      // Simulate EACCES during read
+      const readSpyAccess = vi.spyOn(fs, 'readFileSync').mockImplementation((p: any, opts: any) => {
+        if (typeof p === 'string' && p.endsWith('.migration.lock')) {
+          const err: any = new Error('Permission denied inspecting lock file');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origReadFileSync(p, opts);
+      });
+
+      try {
+        const inspectAccess = lock.readLockOwner();
+        expect(inspectAccess.status).toBe('FILESYSTEM_ERROR');
+        expect(inspectAccess.error).toBeDefined();
+        expect(inspectAccess.details).toContain('EACCES');
+
+        const relAccess = lock.release();
+        expect(relAccess.status).toBe('FILESYSTEM_ERROR');
+        expect(relAccess.success).toBe(false);
+        // Tokens must be preserved!
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+      } finally {
+        readSpyAccess.mockRestore();
+      }
+
+      // Simulate EIO during read
+      const readSpyEio = vi.spyOn(fs, 'readFileSync').mockImplementation((p: any, opts: any) => {
+        if (typeof p === 'string' && p.endsWith('.migration.lock')) {
+          const err: any = new Error('I/O error inspecting lock file');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origReadFileSync(p, opts);
+      });
+
+      try {
+        const inspectEio = lock.readLockOwner();
+        expect(inspectEio.status).toBe('FILESYSTEM_ERROR');
+        expect(inspectEio.details).toContain('EIO');
+
+        const relEio = lock.release();
+        expect(relEio.status).toBe('FILESYSTEM_ERROR');
+        expect(relEio.success).toBe(false);
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+      } finally {
+        readSpyEio.mockRestore();
+      }
+
+      // Clean release
+      const cleanRel = lock.release();
+      expect(cleanRel.status).toBe('RELEASED');
+      expect(cleanRel.success).toBe(true);
+    });
+
+    it('20. Filesystem read failure does NOT become OWNERSHIP_MISMATCH', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+
+      const origReadFileSync = fs.readFileSync;
+      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation((p: any, opts: any) => {
+        if (typeof p === 'string' && p.endsWith('.migration.lock')) {
+          const err: any = new Error('Storage controller read timeout');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origReadFileSync(p, opts);
+      });
+
+      try {
+        const res = lock.release();
+        // MUST be FILESYSTEM_ERROR, NEVER OWNERSHIP_MISMATCH!
+        expect(res.status).toBe('FILESYSTEM_ERROR');
+        expect(res.status).not.toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+      } finally {
+        readSpy.mockRestore();
+        lock.release();
+      }
+    });
+
+    it('21. Malformed JSON does NOT cause lock deletion and returns OWNERSHIP_MISMATCH', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      // Overwrite with invalid syntax
+      fs.writeFileSync(lockFile, '{{{ MALFORMED_JSON_CORRUPT_PAYLOAD');
+
+      const inspection = lock.readLockOwner();
+      expect(inspection.status).toBe('MALFORMED');
+      expect(inspection.details).toContain('invalid JSON');
+
+      const res = lock.release();
+      expect(res.status).toBe('OWNERSHIP_MISMATCH');
+      expect(res.success).toBe(false);
+      expect(res.details).toContain('malformed');
+
+      // The malformed lock file must NOT be deleted!
+      expect(fs.existsSync(lockFile)).toBe(true);
+      expect(fs.readFileSync(lockFile, 'utf8')).toBe('{{{ MALFORMED_JSON_CORRUPT_PAYLOAD');
+
+      // Token and acquired state must be preserved
+      expect(lock.isAcquired()).toBe(true);
+      expect(lock.getAcquisitionToken()).toBe(token);
+
+      // Clean up malformed lock file
+      fs.unlinkSync(lockFile);
+    });
+
+    it('22. Deterministic adversarial test: lock replacement race immediately following read is detected and foreign lock is not deleted', async () => {
+      const lockA = new MigrationLock(dbPath);
+      await lockA.acquire(1000);
+      const tokenA = lockA.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      const foreignPayload = {
+        token: crypto.randomUUID(),
+        pid: 98765,
+        hostname: 'adversary-host',
+        acquiredAt: new Date().toISOString(),
+        dbPath,
+      };
+
+      let readCount = 0;
+      const origReadLockOwner = lockA.readLockOwner.bind(lockA);
+
+      // Adversarial spy: right after the first valid read of Lock A, replace lock file on disk with foreign lock
+      const spy = vi.spyOn(lockA, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          // 1. Initial read returns Lock A
+          const res = origReadLockOwner();
+          // 2. Adversary replaces lock file immediately after the initial read
+          fs.writeFileSync(lockFile, JSON.stringify(foreignPayload));
+          return res;
+        }
+        // Subsequent call (pre-unlink check): reads the replaced foreign lock from disk
+        return origReadLockOwner();
+      });
+
+      try {
+        // 3. Allows release operation to continue
+        const res = lockA.release();
+
+        // 4. Verifies that the foreign lock is NOT deleted!
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('Lock file on disk was modified or replaced prior to unlink');
+
+        // Foreign lock is preserved byte-for-byte!
+        expect(fs.existsSync(lockFile)).toBe(true);
+        const onDisk = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+        expect(onDisk.token).toBe(foreignPayload.token);
+        expect(onDisk.pid).toBe(foreignPayload.pid);
+
+        // Instance A preserves its state
+        expect(lockA.isAcquired()).toBe(true);
+        expect(lockA.getAcquisitionToken()).toBe(tokenA);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
   });
 
   describe('Strict Baseline Fingerprint & Structural Inspection', () => {
@@ -1761,6 +1942,138 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         expect(checkRegistry).toBeUndefined();
       } finally {
         fsyncSpy.mockRestore();
+        db.close();
+      }
+    });
+
+    it('21. Backup cleanup treats ENOENT as already absent without generating cleanup warnings', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const res = await createWalSafeBackup(db, dbPath, 2);
+      expect(res.backupPath).toBeDefined();
+      expect(fs.existsSync(res.backupPath)).toBe(true);
+      // Confirmed ENOENT on staging files does NOT create warnings
+      expect(res.cleanupWarnings).toBeUndefined();
+
+      db.close();
+    });
+
+    it('22. EACCES during staging cleanup produces observable cleanup warning in BackupResult', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.includes('.tmp_staging_') && p.endsWith('staging.sqlite')) {
+          const err: any = new Error('Permission denied unlinking staging file');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const res = await createWalSafeBackup(db, dbPath, 2);
+        expect(res.backupPath).toBeDefined();
+        expect(fs.existsSync(res.backupPath)).toBe(true);
+        expect(res.cleanupWarnings).toBeDefined();
+        expect(res.cleanupWarnings!.length).toBeGreaterThan(0);
+        expect(res.cleanupWarnings![0]).toContain('EACCES');
+      } finally {
+        unlinkSpy.mockRestore();
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        if (fs.existsSync(backupDir)) {
+          const stDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+          for (const d of stDirs) {
+            fs.rmSync(path.join(backupDir, d), { recursive: true, force: true });
+          }
+        }
+        db.close();
+      }
+    });
+
+    it('23. EIO during cleanup on backup failure retains ownership and reports orphaned path', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      // Force backup failure via file fsync error
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+        const err: any = new Error('Disk controller error during file sync');
+        err.code = 'EIO';
+        throw err;
+      });
+
+      // Force rmdirSync to throw EIO during cleanup
+      const origRmdir = fs.rmdirSync;
+      const rmdirSpy = vi.spyOn(fs, 'rmdirSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.includes('.tmp_staging_')) {
+          const err: any = new Error('I/O error removing staging dir');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origRmdir(p);
+      });
+
+      try {
+        let caughtErr: any = null;
+        try {
+          await createWalSafeBackup(db, dbPath, 2);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(MigrationBackupError);
+        expect((caughtErr as any).cleanupFailures).toBeDefined();
+        expect((caughtErr as any).cleanupFailures[0]).toContain('EIO');
+        // Ownership metadata is retained!
+        expect((caughtErr as any).orphanedStagingDir).toBeDefined();
+        expect((caughtErr as any).orphanedStagingDir).toContain('.tmp_staging_');
+      } finally {
+        fsyncSpy.mockRestore();
+        rmdirSpy.mockRestore();
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        if (fs.existsSync(backupDir)) {
+          const stDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+          for (const d of stDirs) {
+            fs.rmSync(path.join(backupDir, d), { recursive: true, force: true });
+          }
+        }
+        db.close();
+      }
+    });
+
+    it('24. Pre-existing collision sentinels remain byte-for-byte unchanged across cleanup', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const sentinelPath = path.join(backupDir, 'unrelated_sentinel.txt');
+      const SENTINEL_DATA = 'CRITICAL_COLLISION_SENTINEL_NEVER_CLOBBER_OR_CLEANUP_BYTE_FOR_BYTE';
+      fs.writeFileSync(sentinelPath, SENTINEL_DATA);
+
+      // Induce backup failure via file fsync
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+        const err: any = new Error('Simulated failure');
+        err.code = 'EIO';
+        throw err;
+      });
+
+      try {
+        await expect(createWalSafeBackup(db, dbPath, 2)).rejects.toThrow(MigrationBackupError);
+
+        // Sentinel is 100% byte-for-byte unchanged
+        expect(fs.existsSync(sentinelPath)).toBe(true);
+        expect(fs.readFileSync(sentinelPath, 'utf8')).toBe(SENTINEL_DATA);
+      } finally {
+        fsyncSpy.mockRestore();
+        if (fs.existsSync(sentinelPath)) fs.unlinkSync(sentinelPath);
         db.close();
       }
     });
