@@ -2626,12 +2626,19 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         files.push(fPath);
       }
 
-      // Simulate one candidate disappearing (ENOENT on statSync)
+      // Simulate one candidate disappearing right after readdirSync before statSync:
+      // Remove the candidate physically using the original unlink implementation
       const disappearedFile = files[2];
       const origStat = fs.statSync;
+      const origUnlink = fs.unlinkSync;
+
       const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
         if (typeof p === 'string' && p === disappearedFile) {
-          const err: any = new Error('No such file or directory');
+          // Physically remove the file to mirror true filesystem disappearance
+          if (fs.existsSync(disappearedFile)) {
+            origUnlink(disappearedFile);
+          }
+          const err: any = new Error(`ENOENT: no such file or directory, stat '${disappearedFile}'`);
           err.code = 'ENOENT';
           throw err;
         }
@@ -2646,8 +2653,12 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         // Disappeared candidate is NOT in unverifiedCount and has no warning
         expect(result.unverifiedCount).toBe(0);
         expect(result.warnings).toBeUndefined();
+
+        // Assert candidate is physically absent on disk
+        expect(fs.existsSync(disappearedFile)).toBe(false);
       } finally {
         statSpy.mockRestore();
+        if (fs.existsSync(disappearedFile)) fs.unlinkSync(disappearedFile);
       }
     });
 
@@ -2701,12 +2712,17 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         files.push(fPath);
       }
 
-      // Oldest 2 are files[0] and files[1]. Let files[0] disappear (ENOENT on unlinkSync)
+      // Oldest 2 are files[0] and files[1]. Let files[0] disappear concurrently before prune unlink:
       const disappearedCandidate = files[0];
       const origUnlink = fs.unlinkSync;
       const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
         if (typeof p === 'string' && p === disappearedCandidate) {
-          const err: any = new Error('Candidate already absent at unlink time');
+          // Physically remove the candidate using the original unlink implementation
+          if (fs.existsSync(disappearedCandidate)) {
+            origUnlink(disappearedCandidate);
+          }
+          // Return / throw simulated ENOENT from the intercepted unlink call
+          const err: any = new Error(`ENOENT: no such file or directory, unlink '${disappearedCandidate}'`);
           err.code = 'ENOENT';
           throw err;
         }
@@ -2721,8 +2737,14 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         // Already absent candidate is NOT in unverifiedCount, and no warning produced
         expect(result.unverifiedCount).toBe(0);
         expect(result.warnings).toBeUndefined();
+
+        // Assert candidate is physically absent
+        expect(fs.existsSync(disappearedCandidate)).toBe(false);
+        // Other successfully pruned candidate is physically absent
+        expect(fs.existsSync(files[1])).toBe(false);
       } finally {
         unlinkSpy.mockRestore();
+        if (fs.existsSync(disappearedCandidate)) fs.unlinkSync(disappearedCandidate);
       }
     });
 

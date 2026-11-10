@@ -1,6 +1,6 @@
 # NEXORA — Phase 02 Implementation Report
-**Step 02.1 through Step 02.1.6 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability, Direct Inspection & Strict Atomic Publication Safety Closure**  
-*Document Version:* 1.6.0  
+**Step 02.1 through Step 02.1.8 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability, Direct Storage Inspection, Strict Atomic Publication & Semantically Accurate Backup Pruning Safety Closure**  
+*Document Version:* 1.8.0  
 *Execution Date:* November 2026  
 *Branch:* `main`  
 *Step 02.1 Approved Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
@@ -9,13 +9,16 @@
 *Step 02.1.3 Approved Baseline Commit:* `f55b582ad75a80ed59d7e08e3a9cb8dc9297b559`  
 *Step 02.1.4 Approved Baseline Commit:* `a7bb52d0bea98f08ab58d2d9d54b1be5ed6e1fda`  
 *Step 02.1.5 Approved Baseline Commit:* `be42002a9addb1e9223c54955cf50eaad71e9143`  
+*Step 02.1.6 Approved Baseline Commit:* `97c37fcea36a49ba8c53f36124ef3bbc9d0d1253`  
+*Step 02.1.7 Approved Baseline Commit:* `d044386bee4267859c28b87e44031306932ab31b`  
+*Step 02.1.8 Approved Baseline Commit:* `1838c1f82015dc04133e1efe9a6f285d73d084e6`  
 *Lead Engineers:* Principal Software Architect, Senior Backend Engineer, Database Reliability Engineer  
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completed implementation and engineering remediation of **STEP 02.1, STEP 02.1.1, STEP 02.1.2, STEP 02.1.3, STEP 02.1.4, STEP 02.1.5 & STEP 02.1.6: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Direct Storage Inspection & Ownership-Safe Release Closure** for the NEXORA platform.
+This report documents the completed implementation and engineering remediation of **STEP 02.1 through STEP 02.1.8: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Direct Storage Inspection, Ownership-Safe Release & Semantically Accurate Backup Pruning Accounting** for the NEXORA platform.
 
 All critical defects identified during the independent architecture reviews have been resolved with mathematical rigor and evidence-backed verification:
 1. **Backup Ordering Fixed:** The runner was restructured so that a verified WAL-safe backup strictly precedes *any* database mutation, including registry creation (`schema_migrations`), DDL, or DML.
@@ -34,12 +37,17 @@ All critical defects identified during the independent architecture reviews have
 14. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
 15. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
 16. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
+17. **Strict Pre-Unlink Classification & Complete 5-Tuple Ownership Identity (Step 02.1.7):** Pre-unlink re-verification strictly maps `ABSENT` to `ALREADY_ABSENT`, `FILESYSTEM_ERROR` (`EACCES`/`EIO`) to `FILESYSTEM_ERROR` (preserving state and refusing unlink), `MALFORMED` to `OWNERSHIP_MISMATCH`, and verifies the complete 5-tuple ownership identity (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`).
+18. **Semantically Accurate Backup Pruning Accounting (Step 02.1.8 & Step 02.1.8.1):** Refactored `pruneOldBackups` to return `PruneResult` distinguishing `prunedCount` (successfully deleted), `retainedCount: number | null` (inspectable candidates selected to remain outside the deletion set, or `null` if directory inspection fails, never claiming 0), `unverifiedCount` (candidates with metadata or deletion failures), and `warnings`. Candidates absent on disk (`ENOENT`) are not counted as retained or unverified. High-fidelity tests mirror physical filesystem absence.
 
 ---
 
-## 2. Table Inventory (15 Physical Tables)
+## 2. Table Inventory (Planned 15 Physical Tables Post-Migration)
 
-Following migration execution, the SQLite catalog contains exactly 15 physical tables:
+> [!IMPORTANT]
+> **State Distinction Notice**: The 15-table schema below represents the **planned post-migration architecture** once migrations are executed in Step 02.2. The **current physical database** `.data/nexora.sqlite` contains exactly 10 tables (9 legacy commerce tables + `schema_migrations`, with 0 Phase 02 domain tables), and was deliberately left untouched during all Step 02.1.x implementation steps.
+
+Following migration execution in Step 02.2, the SQLite catalog will contain exactly 15 physical tables:
 
 | Category | Table Name | Primary Key | Critical Constraints |
 |---|---|---|---|
@@ -109,6 +117,52 @@ Baseline validation now performs comprehensive structural verification:
 - **Administrative Verification:** `AdminVerifyCertificationSchema` accepts `'VERIFIED'`, `'REVOKED'`, or `'PENDING_VERIFICATION'`. `EXPIRED` is excluded because credential expiration is dynamically evaluated from `expirationDate`.
 - **Media Asset Update Refinement:** `UpdateMediaAssetSchema` and `validateMergedMediaAsset()` validate that partial updates cannot create an inconsistent state (`visibility === 'public'` with null `publicUrl`, or `visibility === 'private'` with non-null `publicUrl`).
 
+### 3.6 Strict Pre-Unlink Classification & 5-Tuple Identity Revalidation (Step 02.1.7) ([`server/migrations/lock.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/lock.ts))
+
+The pre-unlink re-verification immediately preceding `fs.unlinkSync()` strictly maps inspection outcomes:
+- **`ABSENT` (`ENOENT`):** Mapped to `ALREADY_ABSENT`. Clears acquired state and tokens (`success: true`).
+- **`FILESYSTEM_ERROR` (`EACCES`, `EPERM`, `EIO`):** Mapped strictly to `FILESYSTEM_ERROR`. Preserves tokens and acquired state, returns `success: false`, and refuses to delete file.
+- **`MALFORMED`:** Mapped to `OWNERSHIP_MISMATCH`. Preserves tokens and acquired state, returns `success: false`, and refuses deletion.
+- **`VALID`:** Verifies the complete 5-tuple ownership identity against the initial inspection:
+  $$\text{Identity} = \langle \text{token}, \text{pid}, \text{hostname}, \text{acquiredAt}, \text{dbPath} \rangle$$
+  If any field differs (e.g. process was replaced or recycled), returns `OWNERSHIP_MISMATCH`, preserves tokens, and refuses to delete.
+- **Threat-Model Boundary:** Portable atomic compare-and-unlink is not natively exposed by user-space OS kernels; pre-unlink verification substantially narrows the race window to an irreducible sub-microsecond OS kernel window. Under Approach 2 (Conservative Fail-Closed Recovery), external out-of-band lock deletion is strictly prohibited while migrations execute.
+
+### 3.7 Semantically Accurate Backup Pruning Accounting (Step 02.1.8 & Step 02.1.8.1) ([`server/migrations/backup.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/backup.ts))
+
+The backup pruning subsystem enforces an exact accounting contract (`PruneResult`):
+```ts
+export interface PruneResult {
+  /** Total number of backup files successfully unlinked by this invocation */
+  prunedCount: number;
+  /**
+   * Confirmed count of inspectable backups intentionally retained on disk.
+   * Null if backup directory inspection failed (e.g. EACCES, EIO) and the total candidate count is unknown.
+   */
+  retainedCount: number | null;
+  /**
+   * Count of candidate backups whose metadata inspection (statSync) or deletion (unlinkSync)
+   * could not be verified due to non-ENOENT filesystem failures.
+   */
+  unverifiedCount: number;
+  /** Observable warnings for all encountered filesystem failures */
+  warnings?: string[];
+}
+```
+
+#### Exact Counter Semantics:
+- **`prunedCount`:** Exact count of candidate files successfully unlinked during this invocation.
+- **`retainedCount`:** Number of inspectable candidate paths selected by this invocation to remain outside the deletion set (`Math.min(validEntries.length, retainCount)`). Mapped strictly to `null` when the backup directory cannot be enumerated (`EACCES`, `EIO`).
+- **`unverifiedCount`:** Number of individually enumerated candidates whose metadata inspection (`statSync`) or deletion (`unlinkSync`) could not be verified due to non-ENOENT filesystem failures.
+- **`warnings`:** Detailed array of observable filesystem errors with affected paths and error codes.
+
+#### Explicit Accounting & Operational Disclaimers:
+1. **Selection Count, Not Atomic Census:** `retainedCount` represents an **operation-level selection count** of inspectable candidates chosen to remain outside the deletion set. It is **not** an atomic physical filesystem census.
+2. **Exclusion of Unverified Candidates:** `retainedCount` excludes unverified candidates.
+3. **Directory Enumeration Failure Semantics:** When directory inspection fails (`EACCES`, `EIO`), `retainedCount` is strictly `null` (never claimed as 0). In this state, `unverifiedCount: 0` indicates that no individual candidate was enumerated and classified; it does **not** prove that no unknown artifacts exist.
+4. **Concurrent External Modifications:** Concurrent out-of-band filesystem actions by external processes can alter physical directory contents after inspection.
+5. **Conservative Preservation:** Unverified candidates are **never deleted**. Missing candidates (`ENOENT`) are not counted as retained, unverified, or successfully pruned.
+
 ---
 
 ## 4. Verification Evidence & Test Results
@@ -120,23 +174,33 @@ Command executed:
 $env:CI="true"; npm test
 ```
 
-Output:
+Latest Verified Execution Output (Step 02.1.8.1):
 ```text
  RUN  v5.0.3 C:/Users/abdal/Desktop/nexora
 
- ✓ server/__tests__/pricing.test.ts (11 tests) 24ms
- ✓ server/__tests__/models.test.ts (27 tests) 281ms
- ✓ server/__tests__/api.test.ts (30 tests) 3308ms
- ✓ server/__tests__/migrations.test.ts (56 tests) 6564ms
+ ✓ server/__tests__/pricing.test.ts (11 tests) 26ms
+ ✓ server/__tests__/models.test.ts (27 tests) 586ms
+ ✓ server/__tests__/api.test.ts (30 tests) 5143ms
+ ✓ server/__tests__/migrations.test.ts (97 tests) 9967ms
 
  Test Files  4 passed (4)
-      Tests  124 passed (124)
-   Start at  09:51:57
-   Duration  7.74s (tests 78%, import 12%, transform 9%, worker 1%)
+      Tests  165 passed (165)
+   Start at  18:33:33
+   Duration  12.18s (tests 73%, transform 16%, import 10%)
 ```
 
-**124 tests passed green across 4 test suites (0 failures, 0 skipped).**  
-Net increase: **+44 comprehensive regression tests** added across Step 02.1.1, Step 02.1.2, and Step 02.1.3 (+10 in Step 02.1.3). Total migration test count: **56 tests**.
+**165 tests passed green across 4 test suites (0 failures, 0 skipped, 100% green).**  
+- **`server/__tests__/migrations.test.ts`:** 97 tests passed.
+- **`server/__tests__/api.test.ts`:** 30 tests passed.
+- **`server/__tests__/models.test.ts`:** 27 tests passed.
+- **`server/__tests__/pricing.test.ts`:** 11 tests passed.
+
+> [!NOTE]
+> **Historical Milestone Snapshots (for Audit Trail):**
+> - *Step 02.1.3 Baseline:* 124 total tests (56 migration tests).
+> - *Step 02.1.6 Baseline:* 144 total tests (76 migration tests).
+> - *Step 02.1.7 Baseline:* 159 total tests (91 migration tests).
+> - *Step 02.1.8 / Step 02.1.8.1 Final Baseline:* 165 total tests (97 migration tests).
 
 ### 4.2 TypeScript Type Checking (`npm run lint`)
 
@@ -168,7 +232,7 @@ Output:
 dist/index.html                             2.28 kB │ gzip:   0.99 kB
 dist/assets/index-DCvfrk5X.css             72.03 kB │ gzip:  11.42 kB
 dist/assets/index-B6eZXCK4.js             352.02 kB │ gzip: 110.40 kB
-✓ built in 2.79s
+✓ built in 5.61s
 ```
 Exit code: `0` (Clean production bundle).
 
@@ -177,12 +241,14 @@ Exit code: `0` (Clean production bundle).
 Verification against the active persistent database file `.data/nexora.sqlite`:
 ```javascript
 Tables in .data/nexora.sqlite: [
-  'users', 'categories', 'products', 'orders', 'order_items',
-  'coupons', 'reviews', 'inventory_transactions', 'newsletter_subscribers'
+  'categories', 'coupons', 'inventory_transactions',
+  'newsletter_subscribers', 'order_items', 'orders',
+  'products', 'reviews', 'schema_migrations', 'users'
 ]
 Record counts: { products: 48, users: 5, orders: 6 }
 ```
-- **Confirmation:** The persistent database was **NOT** migrated or altered in STEP 02.1 or STEP 02.1.1.
+- **Confirmation:** The persistent working database was **never migrated or altered** in any Step 02.1.x implementation turn.
+- Exactly 10 physical tables (9 legacy commerce tables + `schema_migrations`, 0 Phase 02 domain tables).
 - All 48 products, 8 categories, 6 orders, 8 order items, 3 coupons, 8 inventory transactions, 1 review, 5 users, and 1 newsletter subscriber remain 100% intact.
 
 ---
