@@ -2378,15 +2378,16 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
     });
 
-    it('25. pruneOldBackups treats non-existent backup directory (ENOENT) as absent without warnings', () => {
+    it('25. pruneOldBackups treats non-existent backup directory (ENOENT) as absent returning accurate zero counts', () => {
       const nonExistentDir = path.join(tempDir, 'does-not-exist-dir');
       const result = pruneOldBackups(nonExistentDir, 5);
       expect(result.prunedCount).toBe(0);
       expect(result.retainedCount).toBe(0);
+      expect(result.unverifiedCount).toBe(0);
       expect(result.warnings).toBeUndefined();
     });
 
-    it('26. pruneOldBackups records directory read permission failure (EACCES) in warnings without throwing', () => {
+    it('26. pruneOldBackups records directory read permission failure (EACCES) in warnings and reports unknown retained count', () => {
       const backupDir = path.join(tempDir, 'backups-eacces');
       fs.mkdirSync(backupDir, { recursive: true });
 
@@ -2403,7 +2404,9 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       try {
         const result = pruneOldBackups(backupDir, 5);
         expect(result.prunedCount).toBe(0);
-        expect(result.retainedCount).toBe(0);
+        // Explicitly unknown (null), never 0!
+        expect(result.retainedCount).toBeNull();
+        expect(result.unverifiedCount).toBe(0);
         expect(result.warnings).toBeDefined();
         expect(result.warnings!.length).toBe(1);
         expect(result.warnings![0]).toContain('EACCES');
@@ -2413,7 +2416,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
     });
 
-    it('27. pruneOldBackups records directory storage failure (EIO) in warnings without throwing', () => {
+    it('27. pruneOldBackups records directory storage failure (EIO) in warnings and reports unknown retained count', () => {
       const backupDir = path.join(tempDir, 'backups-eio');
       fs.mkdirSync(backupDir, { recursive: true });
 
@@ -2430,7 +2433,9 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       try {
         const result = pruneOldBackups(backupDir, 5);
         expect(result.prunedCount).toBe(0);
-        expect(result.retainedCount).toBe(0);
+        // Explicitly unknown (null), never 0!
+        expect(result.retainedCount).toBeNull();
+        expect(result.unverifiedCount).toBe(0);
         expect(result.warnings).toBeDefined();
         expect(result.warnings!.length).toBe(1);
         expect(result.warnings![0]).toContain('EIO');
@@ -2439,7 +2444,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
     });
 
-    it('28. pruneOldBackups records candidate stat failure (EACCES/EIO) in warnings and continues pruning valid candidates', () => {
+    it('28. Candidate statSync() returning EACCES is represented as unverified and does not abort remaining pruning', () => {
       const backupDir = path.join(tempDir, 'backups-stat-fail');
       fs.mkdirSync(backupDir, { recursive: true });
 
@@ -2452,7 +2457,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         files.push(fPath);
       }
 
-      // One file has a stat failure
+      // One file has an EACCES stat failure
       const problematicFile = files[2];
       const origStat = fs.statSync;
       const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
@@ -2468,6 +2473,8 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         const result = pruneOldBackups(backupDir, 5);
         // Out of 6 stat-able candidates, retainCount is 5, so 1 is pruned
         expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
         expect(result.warnings).toBeDefined();
         expect(result.warnings!.length).toBe(1);
         expect(result.warnings![0]).toContain('EACCES');
@@ -2477,7 +2484,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
     });
 
-    it('29. pruneOldBackups records expired backup deletion failure (EPERM/EIO) in warnings without aborting other deletions', () => {
+    it('29. Candidate unlinkSync() returning EPERM is observable and accounted for in unverifiedCount', () => {
       const backupDir = path.join(tempDir, 'backups-unlink-fail');
       fs.mkdirSync(backupDir, { recursive: true });
 
@@ -2508,6 +2515,8 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         const result = pruneOldBackups(backupDir, 5);
         // files[1] successfully unlinked, files[0] failed -> prunedCount = 1
         expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
         expect(result.warnings).toBeDefined();
         expect(result.warnings!.length).toBe(1);
         expect(result.warnings![0]).toContain('EPERM');
@@ -2522,7 +2531,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       }
     });
 
-    it('30. pruneOldBackups retains exactly 5 newest backups and preserves unrelated sentinel files byte-for-byte', () => {
+    it('30. A clean pruning run reports correct prunedCount, retainedCount, zero unverifiedCount, and preserves sentinels byte-for-byte', () => {
       const backupDir = path.join(tempDir, 'backups-retention');
       fs.mkdirSync(backupDir, { recursive: true });
 
@@ -2544,6 +2553,7 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       const result = pruneOldBackups(backupDir, 5);
       expect(result.prunedCount).toBe(3);
       expect(result.retainedCount).toBe(5);
+      expect(result.unverifiedCount).toBe(0);
       expect(result.warnings).toBeUndefined();
 
       // Sentinel must be untouched
@@ -2600,6 +2610,247 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       } finally {
         readdirSpy.mockRestore();
         db.close();
+      }
+    });
+
+    it('32. Candidate statSync() returning ENOENT is not counted as retained or unverified', () => {
+      const backupDir = path.join(tempDir, 'backups-stat-enoent');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Create 7 backup files
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        files.push(fPath);
+      }
+
+      // Simulate one candidate disappearing (ENOENT on statSync)
+      const disappearedFile = files[2];
+      const origStat = fs.statSync;
+      const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === disappearedFile) {
+          const err: any = new Error('No such file or directory');
+          err.code = 'ENOENT';
+          throw err;
+        }
+        return origStat(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        // 6 inspectable candidates: 5 retained, 1 pruned
+        expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        // Disappeared candidate is NOT in unverifiedCount and has no warning
+        expect(result.unverifiedCount).toBe(0);
+        expect(result.warnings).toBeUndefined();
+      } finally {
+        statSpy.mockRestore();
+      }
+    });
+
+    it('33. Candidate statSync() returning EIO is represented as unverified', () => {
+      const backupDir = path.join(tempDir, 'backups-stat-eio');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        files.push(fPath);
+      }
+
+      const eioFile = files[3];
+      const origStat = fs.statSync;
+      const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === eioFile) {
+          const err: any = new Error('Storage controller read failure on candidate stat');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origStat(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings![0]).toContain('EIO');
+        expect(result.warnings![0]).toContain(eioFile);
+      } finally {
+        statSpy.mockRestore();
+      }
+    });
+
+    it('34. Candidate unlinkSync() returning ENOENT is not counted as retained or successfully pruned', () => {
+      const backupDir = path.join(tempDir, 'backups-unlink-enoent');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      // Oldest 2 are files[0] and files[1]. Let files[0] disappear (ENOENT on unlinkSync)
+      const disappearedCandidate = files[0];
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === disappearedCandidate) {
+          const err: any = new Error('Candidate already absent at unlink time');
+          err.code = 'ENOENT';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        // files[1] successfully unlinked -> prunedCount = 1
+        expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        // Already absent candidate is NOT in unverifiedCount, and no warning produced
+        expect(result.unverifiedCount).toBe(0);
+        expect(result.warnings).toBeUndefined();
+      } finally {
+        unlinkSpy.mockRestore();
+      }
+    });
+
+    it('35. Candidate unlinkSync() returning EACCES is observable and accounted for in unverifiedCount', () => {
+      const backupDir = path.join(tempDir, 'backups-unlink-eacces');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      const eaccesCandidate = files[0];
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === eaccesCandidate) {
+          const err: any = new Error('Access denied deleting expired backup');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings![0]).toContain('EACCES');
+        expect(result.warnings![0]).toContain(eaccesCandidate);
+      } finally {
+        unlinkSpy.mockRestore();
+      }
+    });
+
+    it('36. Candidate unlinkSync() returning EIO is observable and accounted for in unverifiedCount', () => {
+      const backupDir = path.join(tempDir, 'backups-unlink-eio');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      const eioCandidate = files[0];
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === eioCandidate) {
+          const err: any = new Error('Hardware storage failure on unlink');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        expect(result.prunedCount).toBe(1);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings![0]).toContain('EIO');
+        expect(result.warnings![0]).toContain(eioCandidate);
+      } finally {
+        unlinkSpy.mockRestore();
+      }
+    });
+
+    it('37. Unverified candidates are never deleted (conservative safety policy)', () => {
+      const backupDir = path.join(tempDir, 'backups-unverified-no-delete');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const files: string[] = [];
+      for (let i = 1; i <= 8; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      // Candidate 0 (the oldest) has stat failure
+      const unverifiedFile = files[0];
+      const origStat = fs.statSync;
+      const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === unverifiedFile) {
+          const err: any = new Error('Permission denied inspecting candidate');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origStat(p);
+      });
+
+      const deletedFiles: string[] = [];
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
+        if (typeof p === 'string') {
+          deletedFiles.push(p);
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+
+        // 7 inspectable candidates: 5 retained, 2 pruned (files[1] and files[2])
+        expect(result.prunedCount).toBe(2);
+        expect(result.retainedCount).toBe(5);
+        expect(result.unverifiedCount).toBe(1);
+
+        // The unverified candidate was NEVER unlinked!
+        expect(deletedFiles).not.toContain(unverifiedFile);
+        expect(fs.existsSync(unverifiedFile)).toBe(true);
+      } finally {
+        statSpy.mockRestore();
+        unlinkSpy.mockRestore();
       }
     });
   });

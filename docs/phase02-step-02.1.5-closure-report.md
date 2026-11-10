@@ -129,7 +129,7 @@ All verification was conducted using the project's native test runner (`vitest`)
 
 ### 3.4 Step 02.1.7 Backup Pruning Observability
 - **Test 25 (`pruneOldBackups treats non-existent backup directory (ENOENT) as absent without warnings`):**
-  - Verified `pruneOldBackups` on absent directory returns `{ prunedCount: 0, retainedCount: 0 }` with no warnings.
+  - Verified `pruneOldBackups` on absent directory returns `{ prunedCount: 0, retainedCount: 0, unverifiedCount: 0 }` with no warnings.
 - **Test 26 (`pruneOldBackups records directory read permission failure (EACCES) in warnings without throwing`):**
   - Verified `EACCES` on `readdirSync` is recorded in warnings with affected path.
 - **Test 27 (`pruneOldBackups records directory storage failure (EIO) in warnings without throwing`):**
@@ -143,19 +143,63 @@ All verification was conducted using the project's native test runner (`vitest`)
 - **Test 31 (`runMigrations propagates backupPruneWarnings into MigrationResult without rolling back committed migration`):**
   - Verified post-commit pruning warnings are surfaced in `MigrationResult.backupPruneWarnings` without rolling back or failing the committed migration.
 
+### 3.5 Step 02.1.8 Backup Pruning Result Accuracy & Unverified Artifact Accounting
+- **Semantically Accurate `PruneResult` Contract:**
+  ```ts
+  export interface PruneResult {
+    prunedCount: number;
+    retainedCount: number | null;
+    unverifiedCount: number;
+    warnings?: string[];
+  }
+  ```
+  - `prunedCount`: Exact count of backup files successfully unlinked by this invocation.
+  - `retainedCount`: Confirmed count of inspectable backups intentionally retained on disk (`Math.min(validEntries.length, retainCount)`). Mapped strictly to `null` if directory inspection failed (`EACCES`, `EIO`), explicitly representing that the true count is unknown (never claiming 0).
+  - `unverifiedCount`: Explicit count of backup candidates whose metadata inspection (`statSync`) or deletion (`unlinkSync`) could not be verified due to non-ENOENT filesystem errors.
+  - `warnings`: Detailed list of observable warnings containing affected paths and error codes.
+- **Conservative Retention & Accounting Invariants:**
+  - `statSync` returning `ENOENT`: candidate confirmed absent; skipped without incrementing retained or unverified count.
+  - `statSync` returning `EACCES`/`EIO`: increment `unverifiedCount`, record warning, and NEVER delete the candidate.
+  - `unlinkSync` returning `ENOENT`: candidate was already absent; not counted as pruned or retained.
+  - `unlinkSync` returning `EPERM`/`EACCES`/`EIO`: increment `unverifiedCount`, record warning, and do not treat as a successful prune.
+- **Test 25 (`Directory ENOENT returns accurate zero counts`):**
+  - Verified `{ prunedCount: 0, retainedCount: 0, unverifiedCount: 0 }` with no warnings.
+- **Test 26 (`Directory EACCES reports an unknown retained count, not zero`):**
+  - Verified `retainedCount === null`, `unverifiedCount === 0`, warning recorded.
+- **Test 27 (`Directory EIO reports an unknown retained count, not zero`):**
+  - Verified `retainedCount === null`, `unverifiedCount === 0`, warning recorded.
+- **Test 28 (`Candidate statSync() returning EACCES is represented as unverified`):**
+  - Verified `unverifiedCount === 1`, `retainedCount === 5`, `prunedCount === 1`.
+- **Test 29 (`Candidate unlinkSync() returning EPERM is observable and accounted for in unverifiedCount`):**
+  - Verified `unverifiedCount === 1`, `retainedCount === 5`, `prunedCount === 1`.
+- **Test 30 (`A clean pruning run reports correct prunedCount, retainedCount, and zero unverifiedCount`):**
+  - Verified clean retention preserves exactly 5 newest backups and sentinels byte-for-byte.
+- **Test 32 (`Candidate statSync() returning ENOENT is not counted as retained or unverified`):**
+  - Verified candidate disappearing during inspection is not counted as retained or unverified.
+- **Test 33 (`Candidate statSync() returning EIO is represented as unverified`):**
+  - Verified candidate stat storage failure increments `unverifiedCount`.
+- **Test 34 (`Candidate unlinkSync() returning ENOENT is not counted as retained or successfully pruned`):**
+  - Verified candidate disappearing before deletion is not counted as pruned or retained.
+- **Test 35 (`Candidate unlinkSync() returning EACCES is observable and accounted for in unverifiedCount`):**
+  - Verified candidate unlink access denial increments `unverifiedCount` and records warning.
+- **Test 36 (`Candidate unlinkSync() returning EIO is observable and accounted for in unverifiedCount`):**
+  - Verified candidate unlink I/O error increments `unverifiedCount` and records warning.
+- **Test 37 (`Unverified candidates are never deleted (conservative safety policy)`):**
+  - Verified unverified candidate is never selected for unlink and remains intact on disk.
+
 ---
 
 ## 4. Modified Source Code Inventory
 
 | File | Nature of Changes |
 | :--- | :--- |
-| `server/migrations/lock.ts` | Refactored `readLockOwner()` returning `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); eliminated `existsSync` from release path; implemented strict pre-unlink classification (`ABSENT` -> `ALREADY_ABSENT`, `FILESYSTEM_ERROR` -> `FILESYSTEM_ERROR`, `MALFORMED` -> `OWNERSHIP_MISMATCH`); enforced 5-tuple ownership identity verification (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`); documented threat-model and operational constraints. |
-| `server/migrations/backup.ts` | Refactored `pruneOldBackups` to return `PruneResult` (`{ prunedCount, retainedCount, warnings? }`); treats confirmed `ENOENT` as absent; records filesystem errors during readdir, stat, and unlink with affected path and error code; eliminated `existsSync` from cleanup paths; direct `unlinkSync`/`rmdirSync` treating `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim. |
-| `server/migrations/runner.ts` | Integrated post-commit pruning observability; captured `pruneOldBackups` warnings into `MigrationResult.backupPruneWarnings` without rolling back or failing committed migrations. |
-| `server/migrations/types.ts` | Added `PruneResult` interface; added `backupPruneWarnings?: string[]` to `MigrationResult`. |
-| `server/__tests__/migrations.test.ts` | Added 15 new regression tests (Tests 23-30 under Lock Lifecycle, Tests 25-31 under Backup Durability & Pruning) covering all Step 02.1.7 contracts (total: 91 migration tests, 159 project tests). |
-| `docs/phase02-step-02.1.5-closure-report.md` | Updated closure report with Step 02.1.7 remediation details, test counts, and evidence. |
-| `docs/phase02-implementation-report.md` | Updated Phase 02 implementation report with Step 02.1.7 defect resolutions and test evidence. |
+| `server/migrations/types.ts` | Refined `PruneResult` contract with `retainedCount: number | null` and `unverifiedCount: number`; documented count semantics. |
+| `server/migrations/backup.ts` | Implemented Step 02.1.8 pruning accounting: directory inspection failure reports `retainedCount: null`; confirmed absent candidates (`ENOENT`) not counted as retained or unverified; candidate `statSync`/`unlinkSync` errors accounted in `unverifiedCount` with warnings; unverified candidates are never deleted. |
+| `server/migrations/runner.ts` | Maintains post-commit pruning warnings propagation into `MigrationResult.backupPruneWarnings` without rolling back committed migrations. |
+| `server/migrations/lock.ts` | Retains all Step 02.1.7 lock safety and 5-tuple ownership identity verification invariants. |
+| `server/__tests__/migrations.test.ts` | Added 6 new regression tests (Tests 32-37 under Backup Pruning) and refined existing tests to assert exact `retainedCount: null`, `unverifiedCount`, and absent candidate handling (total: 97 migration tests, 165 project tests). |
+| `docs/phase02-step-02.1.5-closure-report.md` | Updated closure report with Step 02.1.8 remediation details, test counts, and evidence. |
+| `docs/phase02-implementation-report.md` | Updated Phase 02 implementation report with Step 02.1.8 defect resolutions and test evidence. |
 
 ---
 
@@ -163,8 +207,8 @@ All verification was conducted using the project's native test runner (`vitest`)
 
 ```text
 VERDICT: PASS
-EVIDENCE: npm test passed (4 test files, 159 tests passed, 0 failures); tsc --noEmit passed (0 errors); vite build passed (1711 modules, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
-CHANGES: server/migrations/lock.ts, server/migrations/backup.ts, server/migrations/runner.ts, server/migrations/types.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
+EVIDENCE: npm test passed (4 test files, 165 tests passed, 0 failures; 97 migration tests in server/__tests__/migrations.test.ts); npm run lint passed (tsc --noEmit, 0 errors); npm run build passed (vite build, 1711 modules transformed, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
+CHANGES: server/migrations/backup.ts, server/migrations/types.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
 UNVERIFIED: Persistent database production rollout (intentionally prohibited until explicitly authorized in Step 02.2).
-ROLLBACK: git checkout 97c37fcea36a49ba8c53f36124ef3bbc9d0d1253
+ROLLBACK: git checkout d044386bee4267859c28b87e44031306932ab31b
 ```

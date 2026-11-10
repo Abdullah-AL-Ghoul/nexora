@@ -40,8 +40,19 @@ export interface BackupResult {
 }
 
 export interface PruneResult {
+  /** Total number of backup files successfully unlinked by this invocation */
   prunedCount: number;
-  retainedCount: number;
+  /**
+   * Confirmed count of inspectable backups intentionally retained on disk.
+   * Null if backup directory inspection failed (e.g. EACCES, EIO) and the total candidate count is unknown.
+   */
+  retainedCount: number | null;
+  /**
+   * Count of candidate backups whose metadata inspection (statSync) or deletion (unlinkSync)
+   * could not be verified due to non-ENOENT filesystem failures.
+   */
+  unverifiedCount: number;
+  /** Observable warnings for all encountered filesystem failures */
   warnings?: string[];
 }
 

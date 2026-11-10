@@ -443,14 +443,31 @@ export function verifyBackupIntegrity(backupPath: string, sourceDb?: DatabaseSyn
 }
 
 /**
- * Prunes backups older than the retainCount most recent files in the backup directory.
- * Returns PruneResult containing count of pruned and retained backups, plus any non-fatal filesystem warnings.
+ * Prunes backups older than the retainCount most recent inspectable files in the backup directory.
+ * Returns PruneResult distinguishing successfully pruned backups, confirmed retained backups,
+ * unverified artifacts, and non-fatal filesystem warnings.
  *
- * Operational Observability Contract (Step 02.1.7):
- * - Confirmed ENOENT on the backup directory or candidates is treated as absent (not a failure).
- * - Filesystem errors during readdir, stat, or unlink are recorded with the affected path and error code.
- * - Filesystem warnings are returned to the caller so they can be surfaced in MigrationResult without
- *   failing committed migrations.
+ * Operational Observability & Accounting Contract (Step 02.1.8):
+ * 1. Directory inspection:
+ *    - Confirmed ENOENT: directory absent; returns { prunedCount: 0, retainedCount: 0, unverifiedCount: 0 }.
+ *    - Filesystem errors (EACCES, EIO, etc.): directory could not be inspected; returns retainedCount: null (unknown),
+ *      unverifiedCount: 0, and records an observable warning.
+ * 2. Candidate metadata inspection:
+ *    - Confirmed ENOENT on candidate statSync: candidate disappeared; skipped without counting as retained or unverified.
+ *    - Filesystem error on statSync (EACCES, EIO, etc.): candidate cannot be safely inspected; increments unverifiedCount,
+ *      records an observable warning, and NEVER deletes it (conservative safety policy).
+ * 3. Retention & Deletion Policy:
+ *    - Sorts all inspectable candidates by modification time descending (newest first).
+ *    - Retains up to retainCount newest inspectable candidates (retainedCount = inspectable.length up to retainCount).
+ *    - Attempts deletion (fs.unlinkSync) strictly on inspectable candidates beyond retainCount.
+ * 4. Candidate deletion:
+ *    - Successful unlinkSync: increments prunedCount.
+ *    - Confirmed ENOENT on unlinkSync: candidate was already absent; not counted as pruned or retained.
+ *    - Deletion failure (EPERM, EACCES, EIO): deletion could not be completed; increments unverifiedCount,
+ *      records an observable warning, and does NOT treat as a successful prune.
+ * 5. Durability & Non-Interference:
+ *    - Unrelated collision sentinels and unverified candidates are never deleted or modified.
+ *    - Filesystem warnings are surfaced to the caller for propagation into MigrationResult.backupPruneWarnings.
  */
 export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult {
   const warnings: string[] = [];
@@ -460,18 +477,21 @@ export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult
     dirEntries = fs.readdirSync(backupDir);
   } catch (readDirErr: any) {
     if (readDirErr?.code === 'ENOENT') {
-      return { prunedCount: 0, retainedCount: 0 };
+      return { prunedCount: 0, retainedCount: 0, unverifiedCount: 0 };
     }
     return {
       prunedCount: 0,
-      retainedCount: 0,
+      retainedCount: null,
+      unverifiedCount: 0,
       warnings: [
         `Failed to inspect backup directory for pruning at "${backupDir}" (${readDirErr?.code ?? 'UNKNOWN'}): ${readDirErr?.message ?? String(readDirErr)}`,
       ],
     };
   }
 
+  let unverifiedCount = 0;
   const validEntries: { path: string; mtime: number }[] = [];
+
   for (const f of dirEntries) {
     if (f.startsWith('nexora.sqlite.bak_') && f.endsWith('.sqlite')) {
       const fullPath = path.join(backupDir, f);
@@ -480,8 +500,10 @@ export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult
         validEntries.push({ path: fullPath, mtime: stat.mtimeMs });
       } catch (statErr: any) {
         if (statErr?.code === 'ENOENT') {
+          // Candidate confirmed absent: not retained, not unverified
           continue;
         }
+        unverifiedCount++;
         warnings.push(
           `Failed to stat backup candidate "${fullPath}" (${statErr?.code ?? 'UNKNOWN'}): ${statErr?.message ?? String(statErr)}`
         );
@@ -492,28 +514,32 @@ export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult
   // Sort newest first
   validEntries.sort((a, b) => b.mtime - a.mtime);
 
+  // Identify confirmed inspectable candidates to retain
+  const retainedCandidates = validEntries.slice(0, retainCount);
+  const candidatesToDelete = validEntries.slice(retainCount);
+
   let prunedCount = 0;
-  if (validEntries.length > retainCount) {
-    const toDelete = validEntries.slice(retainCount);
-    for (const item of toDelete) {
-      try {
-        fs.unlinkSync(item.path);
-        prunedCount++;
-      } catch (unlinkErr: any) {
-        if (unlinkErr?.code === 'ENOENT') {
-          continue;
-        }
-        warnings.push(
-          `Failed to delete expired backup "${item.path}" (${unlinkErr?.code ?? 'UNKNOWN'}): ${unlinkErr?.message ?? String(unlinkErr)}`
-        );
+  for (const item of candidatesToDelete) {
+    try {
+      fs.unlinkSync(item.path);
+      prunedCount++;
+    } catch (unlinkErr: any) {
+      if (unlinkErr?.code === 'ENOENT') {
+        // Candidate was already absent prior to unlink: not pruned by this invocation, not retained
+        continue;
       }
+      // Deletion failed: candidate remaining state could not be confirmed / remains on disk
+      unverifiedCount++;
+      warnings.push(
+        `Failed to delete expired backup "${item.path}" (${unlinkErr?.code ?? 'UNKNOWN'}): ${unlinkErr?.message ?? String(unlinkErr)}`
+      );
     }
   }
 
-  const retainedCount = validEntries.length - prunedCount;
   return {
     prunedCount,
-    retainedCount,
+    retainedCount: retainedCandidates.length,
+    unverifiedCount,
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
