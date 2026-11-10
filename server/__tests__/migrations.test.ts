@@ -20,7 +20,7 @@ import {
   MigrationLockError,
   MigrationRegistryError,
 } from '../migrations/types.js';
-import { createWalSafeBackup, verifyBackupIntegrity, pruneOldBackups } from '../migrations/backup.js';
+import { createWalSafeBackup, verifyBackupIntegrity, pruneOldBackups, ensureSecureBackupDirectory } from '../migrations/backup.js';
 import { MigrationLock } from '../migrations/lock.js';
 import {
   BASELINE_DDL,
@@ -2936,6 +2936,235 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       expect(getCount('certification_media')).toBe(0);
 
       db.close();
+    });
+  });
+
+  describe('Filesystem Access-Control & Artifact Security (Step 02.1.9.1)', () => {
+    const isWindows = process.platform === 'win32';
+
+    it('1. Newly created backup directory is initialized without clobbering', () => {
+      const backupDir = path.join(tempDir, 'secure-backups-new');
+      expect(fs.existsSync(backupDir)).toBe(false);
+
+      ensureSecureBackupDirectory(backupDir);
+
+      expect(fs.existsSync(backupDir)).toBe(true);
+      expect(fs.statSync(backupDir).isDirectory()).toBe(true);
+    });
+
+    it.skipIf(isWindows)(
+      '2. Newly created backup directory receives restrictive mode 0700 on POSIX',
+      () => {
+        const backupDir = path.join(tempDir, 'posix-backups-new');
+        ensureSecureBackupDirectory(backupDir);
+
+        const stat = fs.statSync(backupDir);
+        expect(stat.mode & 0o777).toBe(0o700);
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '3. Newly created staging directory and staging file receive restrictive modes (0700 / 0600) on POSIX',
+      async () => {
+        const db = new DatabaseSync(dbPath);
+        db.exec('CREATE TABLE dummy (id INTEGER PRIMARY KEY); INSERT INTO dummy VALUES (1);');
+
+        let capturedStagingDirMode: number | undefined;
+        let capturedStagingFileMode: number | undefined;
+
+        const origChmod = fs.chmodSync;
+        const chmodSpy = vi.spyOn(fs, 'chmodSync').mockImplementation((p: any, mode: any) => {
+          if (typeof p === 'string' && p.includes('.tmp_staging_')) {
+            if (p.endsWith('staging.sqlite')) {
+              capturedStagingFileMode = mode;
+            } else {
+              capturedStagingDirMode = mode;
+            }
+          }
+          return origChmod(p, mode);
+        });
+
+        try {
+          const res = await createWalSafeBackup(db, dbPath, 2);
+          expect(res.backupPath).toBeDefined();
+          expect(capturedStagingDirMode).toBe(0o700);
+          expect(capturedStagingFileMode).toBe(0o600);
+        } finally {
+          chmodSpy.mockRestore();
+          db.close();
+        }
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '4. Published hard-link backup retains expected restrictive file permissions (0600) on POSIX',
+      async () => {
+        const db = new DatabaseSync(dbPath);
+        db.exec('CREATE TABLE dummy (id INTEGER PRIMARY KEY); INSERT INTO dummy VALUES (1);');
+
+        try {
+          const res = await createWalSafeBackup(db, dbPath, 2);
+          expect(fs.existsSync(res.backupPath)).toBe(true);
+
+          const stat = fs.statSync(res.backupPath);
+          expect(stat.mode & 0o777).toBe(0o600);
+        } finally {
+          db.close();
+        }
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '5. Existing permissive backup directory is safely tightened to 0700 on POSIX',
+      () => {
+        const backupDir = path.join(tempDir, 'permissive-dir');
+        fs.mkdirSync(backupDir, { recursive: true, mode: 0o777 });
+        fs.chmodSync(backupDir, 0o777);
+        expect(fs.statSync(backupDir).mode & 0o777).toBe(0o777);
+
+        ensureSecureBackupDirectory(backupDir);
+
+        const stat = fs.statSync(backupDir);
+        expect(stat.mode & 0o777).toBe(0o700);
+      }
+    );
+
+    it('6. Existing backup artifacts are never deleted or overwritten by permission remediation', () => {
+      const backupDir = path.join(tempDir, 'existing-backups-remediation');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Create pre-existing backup file
+      const backupFilename = 'nexora.sqlite.bak_20261110T120000Z_aabbccdd11223344_pre_v1.sqlite';
+      const backupFile = path.join(backupDir, backupFilename);
+      const originalData = 'ORIGINAL_PRE_EXISTING_BACKUP_DATA_DO_NOT_TOUCH';
+      fs.writeFileSync(backupFile, originalData);
+
+      // Create unrelated collision sentinel file
+      const sentinelFile = path.join(backupDir, 'collision_sentinel.txt');
+      const sentinelData = 'SENTINEL_CONTENT_MUST_REMAIN';
+      fs.writeFileSync(sentinelFile, sentinelData);
+
+      ensureSecureBackupDirectory(backupDir);
+
+      // Verify existing backup artifact is preserved 100% byte-for-byte
+      expect(fs.existsSync(backupFile)).toBe(true);
+      expect(fs.readFileSync(backupFile, 'utf8')).toBe(originalData);
+
+      // Verify collision sentinel is preserved 100% byte-for-byte
+      expect(fs.existsSync(sentinelFile)).toBe(true);
+      expect(fs.readFileSync(sentinelFile, 'utf8')).toBe(sentinelData);
+
+      // On POSIX, verify backup was tightened to 0600
+      if (!isWindows) {
+        expect(fs.statSync(backupFile).mode & 0o777).toBe(0o600);
+      }
+    });
+
+    it.skipIf(isWindows)(
+      '7. Permission tightening failure on backup directory fails closed with MigrationBackupError',
+      () => {
+        const backupDir = path.join(tempDir, 'chmod-fail-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+        fs.chmodSync(backupDir, 0o777);
+
+        const origChmod = fs.chmodSync;
+        const chmodSpy = vi.spyOn(fs, 'chmodSync').mockImplementation((p: any, ...args: any[]) => {
+          if (typeof p === 'string' && p === backupDir) {
+            const err: any = new Error('EACCES: permission denied, chmod');
+            err.code = 'EACCES';
+            throw err;
+          }
+          return origChmod(p, ...(args as [any]));
+        });
+
+        try {
+          expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
+          try {
+            ensureSecureBackupDirectory(backupDir);
+          } catch (err: any) {
+            expect(err.message).toContain('could not be tightened to 0700');
+            expect(err.message).toContain('EACCES');
+          }
+        } finally {
+          chmodSpy.mockRestore();
+        }
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '8. Permission tightening failure on existing backup artifact fails closed with MigrationBackupError',
+      () => {
+        const backupDir = path.join(tempDir, 'art-fail-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        const backupFilename = 'nexora.sqlite.bak_20261110T120000Z_aabbccdd11223344_pre_v1.sqlite';
+        const backupFile = path.join(backupDir, backupFilename);
+        fs.writeFileSync(backupFile, 'BACKUP_CONTENT');
+        fs.chmodSync(backupFile, 0o666);
+
+        const origChmod = fs.chmodSync;
+        const chmodSpy = vi.spyOn(fs, 'chmodSync').mockImplementation((p: any, ...args: any[]) => {
+          if (typeof p === 'string' && p === backupFile) {
+            const err: any = new Error('EPERM: operation not permitted, chmod');
+            err.code = 'EPERM';
+            throw err;
+          }
+          return origChmod(p, ...(args as [any]));
+        });
+
+        try {
+          expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
+          try {
+            ensureSecureBackupDirectory(backupDir);
+          } catch (err: any) {
+            expect(err.message).toContain('Failed to secure permissive existing backup artifact');
+            expect(err.message).toContain(backupFilename);
+          }
+        } finally {
+          chmodSpy.mockRestore();
+        }
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '9. Lock file permissions are restrictive (0600) after acquisition on POSIX',
+      async () => {
+        const lock = new MigrationLock(dbPath);
+        await lock.acquire();
+
+        const lockFile = `${dbPath}.migration.lock`;
+        expect(fs.existsSync(lockFile)).toBe(true);
+
+        const stat = fs.statSync(lockFile);
+        expect(stat.mode & 0o777).toBe(0o600);
+
+        lock.release();
+        expect(fs.existsSync(lockFile)).toBe(false);
+      }
+    );
+
+    it('10. Foreign lock files and collision sentinels remain untouched across permission checks and acquisitions', async () => {
+      const lockFile = `${dbPath}.migration.lock`;
+      const foreignPayload = {
+        token: 'foreign-uuid-token',
+        pid: 999999,
+        hostname: 'foreign-host',
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+        dbPath,
+      };
+      const foreignData = JSON.stringify(foreignPayload, null, 2);
+      fs.writeFileSync(lockFile, foreignData);
+
+      // Attempt acquisition from another instance
+      const lock = new MigrationLock(dbPath);
+      await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+
+      // Foreign lock file is 100% byte-for-byte unchanged
+      expect(fs.existsSync(lockFile)).toBe(true);
+      expect(fs.readFileSync(lockFile, 'utf8')).toBe(foreignData);
+
+      // Cleanup
+      fs.unlinkSync(lockFile);
     });
   });
 });

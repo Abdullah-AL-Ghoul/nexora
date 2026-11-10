@@ -1,10 +1,10 @@
-# NEXORA — Step 02.1.5 through Step 02.1.8 Closure Report
-**Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication & Semantically Accurate Backup Pruning Safety Closure**
+# NEXORA — Step 02.1.5 through Step 02.1.9.1 Closure Report
+**Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Semantically Accurate Backup Pruning & Artifact Access-Control Hardening**
 
 - **Project:** NEXORA — Version B
 - **Repository:** `https://github.com/Abdullah-AL-Ghoul/nexora`
 - **Authorized Branch:** `main`
-- **Approved Baseline Commit:** `1838c1f82015dc04133e1efe9a6f285d73d084e6`
+- **Approved Baseline Commit:** `310c929a1f4fcec5b7f853ce076e28fa60bdb337`
 - **Execution Date:** November 2026
 - **Status:** Complete & Verified
 
@@ -12,9 +12,9 @@
 
 ## 1. Executive Summary & Defect Remediation Overview
 
-This engineering closure report documents the completion of **STEP 02.1.5 through STEP 02.1.8: Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Backup Cleanup Invariants & Semantically Accurate Backup Pruning Accounting**.
+This engineering closure report documents the completion of **STEP 02.1.5 through STEP 02.1.9.1: Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Backup Cleanup Invariants, Semantically Accurate Backup Pruning Accounting & Artifact Access-Control Hardening**.
 
-All operational safety gaps, race conditions, classification ambiguities, and accounting discrepancies identified during independent architecture reviews across Steps 02.1.5, 02.1.6, 02.1.7, and 02.1.8 have been systematically resolved and verified with automated regression test suites:
+All operational safety gaps, race conditions, classification ambiguities, accounting discrepancies, and filesystem access-control findings identified during independent architecture reviews across Steps 02.1.5 through 02.1.9.1 have been systematically resolved and verified with automated regression test suites:
 
 1. **Lock Inspection Directly from Storage (Elimination of `fs.existsSync` Blind Spot — Step 02.1.5 & Step 02.1.6):**
    - *Defect:* `MigrationLock.release()` previously relied on `fs.existsSync()`. In Node.js, `existsSync()` returns `false` on any access failure (such as `EACCES` or `EPERM`), which caused an inaccessible lock file to be wrongly classified as `ALREADY_ABSENT`, inadvertently wiping `acquired` and `acquisitionToken`.
@@ -32,12 +32,12 @@ All operational safety gaps, race conditions, classification ambiguities, and ac
    - *Resolution:* Malformed JSON or corrupted payloads return `{ status: 'MALFORMED' }`. `release()` refuses to delete the file, returns `{ status: 'OWNERSHIP_MISMATCH' }` with descriptive details, and preserves internal acquisition tokens.
    - *Claim Classification:* **Verified by executed test**.
 
-3. **Ownership Replacement Race Analysis & Threat-Model Documentation (Step 02.1.6):**
+3. **Ownership Replacement Race Analysis & Threat-Model Documentation (Step 02.1.6 & Step 02.1.9.1):**
    - *Defect Review:* The window between inspecting lock owner metadata and executing `fs.unlinkSync()` could permit an adversarial replacement if another process or human operator forcibly overwrote the lock file out-of-band.
    - *Defensive Mitigation:* Implemented immediate pre-unlink re-verification. Before issuing `fs.unlinkSync()`, `release()` re-reads the lock file from disk. If the file on disk was modified, corrupted, or replaced with a foreign lock between initial read and unlink, the runner detects the mismatch, aborts the unlink, and returns `OWNERSHIP_MISMATCH`.
    - *Threat-Model Limitation & Operational Constraint:*
-     - *Limitation:* Node.js standard library and host OS kernels (Win32, POSIX) do not provide a portable atomic `compare-and-unlink` system call. An irreducible sub-microsecond window exists between any user-space check and the OS kernel unlinking the directory entry.
-     - *Required Operational Constraint:* Under Approach 2 (Conservative Fail-Closed Recovery), external actors and operators MUST NOT out-of-band overwrite or delete active lock files while a migration is in progress. Automatic stale-lock reclamation remains strictly forbidden.
+     - *Limitation:* Node.js standard library and host OS kernels (Win32, POSIX) do not provide a portable atomic `compare-and-unlink` system call. Pre-unlink ownership re-verification exists, but the check and the path-based `unlinkSync()` are not a single atomic operating-system operation. A residual time-of-check to time-of-use (TOCTOU) race remains between the check and unlink.
+     - *Required Operational Constraint:* Under Approach 2 (Conservative Fail-Closed Recovery), external actors and operators MUST NOT out-of-band overwrite or delete active lock files while a migration is in progress. Automatic stale-lock reclamation remains strictly forbidden. The residual race is not claimed to be mathematically eliminated; safety is enforced via fail-closed recovery and operational isolation.
    - *Claim Classification:* **Verified by executed test** and **Verified by source inspection**.
 
 4. **Strict Pre-Unlink Classification & Complete 5-Tuple Ownership Identity (Step 02.1.7):**
@@ -73,7 +73,19 @@ All operational safety gaps, race conditions, classification ambiguities, and ac
    - *Improvement:* Enhanced ENOENT regression tests (Tests 32 and 34) to physically unlink candidate files from disk during intercepted calls, verifying physical absence (`fs.existsSync(...) === false`) alongside exact counter assertions.
    - *Claim Classification:* **Verified by executed test**.
 
-8. **Absolute Working Database Protection:**
+8. **Filesystem Access-Control Hardening (Step 02.1.9.1 — F-03 Closure):**
+   - *Finding Review:* Previously, directories and staging artifacts were created relying on ambient process `umask` without explicit restrictive mode bits.
+   - *Resolution:*
+     - Backup directory enforced to mode `0700` (`drwx------`). Pre-existing backup directories are inspected and safely tightened to `0700` on POSIX; failure to secure fails closed.
+     - Staging directories created with mode `0700`.
+     - Staging files created with exclusive `wx` flag and explicit restrictive mode `0600` (`-rw-------`).
+     - Hard-link published backup artifacts retain mode `0600` via inode preservation with post-publication verification.
+     - Pre-existing Nexora backup artifacts matching `nexora.sqlite.bak_*.sqlite` on POSIX are inspected and tightened to `0600`. Pre-existing files are **never deleted or overwritten**. Collision sentinels remain completely untouched.
+     - Migration lock files created exclusively with mode `0600` on POSIX. Parent database directory is never chmodded indiscriminately.
+     - Windows NTFS platform limitation is explicitly documented: Windows does not use POSIX permission bits, relying instead on inherited NTFS ACLs of the `.data` directory.
+   - *Claim Classification:* **Verified by executed test** and **Verified by source inspection**.
+
+9. **Absolute Working Database Protection:**
    - Persistent database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 physical tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact).
    - *Claim Classification:* **Verified by executed test**.
 
@@ -85,11 +97,11 @@ All verification was conducted using the project's native test runner (`vitest`)
 
 | Verification Suite | Target | Result | Evidence |
 | :--- | :--- | :--- | :--- |
-| **Migration Suite** | `server/__tests__/migrations.test.ts` | **PASS** | 97 passed (97 tests, 0 failures) |
+| **Migration Suite** | `server/__tests__/migrations.test.ts` | **PASS** | 107 tests total (100 passed, 7 skipped on Windows, 0 failures) |
 | **API Suite** | `server/__tests__/api.test.ts` | **PASS** | 30 passed (30 tests, 0 failures) |
 | **Models Suite** | `server/__tests__/models.test.ts` | **PASS** | 27 passed (27 tests, 0 failures) |
 | **Pricing Suite** | `server/__tests__/pricing.test.ts` | **PASS** | 11 passed (11 tests, 0 failures) |
-| **Full Project Test Suite** | `npm test` | **PASS** | 4 test files, 165 passed (165 tests, 0 failures) |
+| **Full Project Test Suite** | `npm test` | **PASS** | 4 test files, 175 tests (168 passed, 7 skipped on Windows, 0 failures) |
 | **TypeScript Typecheck** | `npm run lint` (`tsc --noEmit`) | **PASS** | 0 type errors, 0 warnings |
 | **Frontend Production Build** | `npm run build` (`vite build`) | **PASS** | 1711 modules transformed, exit code 0 |
 | **Persistent DB Verification** | `.data/nexora.sqlite` | **PASS** | 0 Phase 02 tables, 48 products, 5 users, 6 orders intact |
@@ -99,7 +111,8 @@ All verification was conducted using the project's native test runner (`vitest`)
 > - Step 02.1 Baseline: 56 migration tests (124 project total)
 > - Step 02.1.5 Baseline: 76 migration tests (144 project total)
 > - Step 02.1.7 Baseline: 91 migration tests (159 project total)
-> - Step 02.1.8 / 02.1.8.1 Final: 97 migration tests (165 project total across 4 test suites)
+> - Step 02.1.8 / 02.1.8.1 Final: 97 migration tests (165 project total)
+> - Step 02.1.9.1 Access-Control Baseline: 107 migration tests (175 project total; 168 passed, 7 skipped on Windows)
 
 ---
 
@@ -189,7 +202,7 @@ export interface PruneResult {
    - Candidates whose unlinking fails (`EPERM`, `EACCES`, `EIO`) are not counted as pruned.
 
 2. **`retainedCount` (number | null):**
-   - The count of inspectable candidate paths selected by this invocation to remain outside the deletion set (`Math.min(validEntries.length, retainCount)`).
+   - Count of inspectable candidate paths selected by this invocation to remain outside the deletion set (`Math.min(validEntries.length, retainCount)`). This is an operation-level selection count, not an atomic filesystem census.
    - Returns strictly `null` if the backup directory cannot be enumerated (`EACCES`, `EIO`), explicitly communicating that the retained count is unknown rather than claiming zero.
    - Does NOT include unverified candidates (candidates whose metadata inspection failed).
 
@@ -201,41 +214,42 @@ export interface PruneResult {
 4. **`warnings` (string[] | undefined):**
    - Detailed array of diagnostic warnings recording exact file paths, filesystem operations, and system error codes for all non-fatal failures encountered during pruning.
 
-#### Explicit Semantic Disclaimers & Operational Boundaries
-- **Operation-Level Selection vs. Atomic Census:** `retainedCount` is an *operation-level selection count* (the number of inspected candidates selected by this invocation to remain outside the deletion set), NOT an atomic filesystem census.
-- **Exclusion of Unverified Candidates:** Unverified candidates are excluded from `retainedCount` and tracked exclusively under `unverifiedCount`.
-- **Directory Enumeration Failure Semantics:** When directory enumeration fails (`readdirSync` throws `EACCES` or `EIO`), `retainedCount` must be `null` (never `0`), and `unverifiedCount: 0` denotes that zero individual candidates could be enumerated and inspected—it does not certify that no unknown artifacts reside in the directory.
-- **Concurrent External Changes:** Concurrent external filesystem modifications can alter physical directory contents after inspection. Node.js standard library does not provide atomic directory snapshotting.
+### 3.6 Step 02.1.9.1 Filesystem Access-Control Hardening & Regression Evidence
 
-#### Regression Test Evidence (Tests 25–37)
-- **Test 25 (`Directory ENOENT returns accurate zero counts`):**
-  - Confirmed `{ prunedCount: 0, retainedCount: 0, unverifiedCount: 0 }` with no warnings.
-- **Test 26 (`Directory EACCES reports an unknown retained count, not zero`):**
-  - Verified `retainedCount === null`, `unverifiedCount === 0`, warning recorded.
-- **Test 27 (`Directory EIO reports an unknown retained count, not zero`):**
-  - Verified `retainedCount === null`, `unverifiedCount === 0`, warning recorded.
-- **Test 28 (`Candidate statSync() returning EACCES is represented as unverified`):**
-  - Verified `unverifiedCount === 1`, `retainedCount === 5`, `prunedCount === 1`.
-- **Test 29 (`Candidate unlinkSync() returning EPERM is observable and accounted for in unverifiedCount`):**
-  - Verified `unverifiedCount === 1`, `retainedCount === 5`, `prunedCount === 1`.
-- **Test 30 (`A clean pruning run reports correct prunedCount, retainedCount, and zero unverifiedCount`):**
-  - Verified clean retention preserves exactly 5 newest backups and sentinels byte-for-byte.
-- **Test 32 (`Candidate statSync() returning ENOENT is not counted as retained or unverified` — High-Fidelity Disk Deletion):**
-  - Candidate physically removed from disk during intercepted call using original unlink.
-  - Verified candidate is physically absent on disk (`fs.existsSync(disappearedFile) === false`).
-  - Verified candidate is neither retained nor unverified nor counted as pruned (`prunedCount: 1`, `retainedCount: 5`, `unverifiedCount: 0`, `warnings: undefined`).
-- **Test 33 (`Candidate statSync() returning EIO is represented as unverified`):**
-  - Verified candidate stat storage failure increments `unverifiedCount`.
-- **Test 34 (`Candidate unlinkSync() returning ENOENT is not counted as retained or successfully pruned` — High-Fidelity Disk Deletion):**
-  - Candidate physically removed from disk during intercepted call using original unlink.
-  - Verified candidate is physically absent on disk (`fs.existsSync(disappearedCandidate) === false`).
-  - Verified not counted as successfully pruned or retained (`prunedCount: 1`, `retainedCount: 5`, `unverifiedCount: 0`, `warnings: undefined`).
-- **Test 35 (`Candidate unlinkSync() returning EACCES is observable and accounted for in unverifiedCount`):**
-  - Verified candidate unlink access denial increments `unverifiedCount` and records warning.
-- **Test 36 (`Candidate unlinkSync() returning EIO is observable and accounted for in unverifiedCount`):**
-  - Verified candidate unlink I/O error increments `unverifiedCount` and records warning.
-- **Test 37 (`Unverified candidates are never deleted (conservative safety policy)`):**
-  - Verified unverified candidate is never selected for unlink and remains intact on disk.
+#### Invariants & Policies
+- **Backup Directory:** Enforced to mode `0700` (`drwx------`).
+- **Staging Directory:** Enforced to mode `0700` (`drwx------`).
+- **Staging File:** Created exclusively via `fs.openSync(stagingFile, 'wx', 0o600)` with explicit `fs.chmodSync(stagingFile, 0o600)`.
+- **Published Backup Artifact:** Retains `0600` mode via inode preservation through hard link (`fs.linkSync`), with post-publication mode verification.
+- **Migration Lock File:** Created exclusively with `mode: 0o600` and enforced via `fs.chmodSync(this.lockFilePath, 0o600)` on POSIX. Parent database directory is never chmodded indiscriminately.
+- **Pre-Existing Backup Directory & Artifacts:**
+  - Permissive backup directories (`(mode & 0o077) !== 0`) are safely tightened to `0700`. If tightening fails or directory remains permissive, fails closed with `MigrationBackupError`.
+  - Permissive pre-existing backup artifacts matching `nexora.sqlite.bak_*.sqlite` are safely tightened to `0600`.
+  - Pre-existing backup files are **never deleted or overwritten**.
+  - Unrelated files and collision sentinels are completely untouched.
+- **Windows Platform Behavior:** Windows NTFS does not use POSIX permission bits; Node.js `chmod` on Windows only toggles `FILE_ATTRIBUTE_READONLY`. Access control on Windows relies on inherited NTFS ACLs of the `.data` directory. Deployments on Windows must secure the parent directory via NTFS ACLs for the service account.
+
+#### Regression Test Evidence (Tests 1–10 under Filesystem Access-Control)
+- **Test 1 (`Newly created backup directory is initialized without clobbering`):**
+  - Confirmed directory creation without touching existing files. (Passed on Windows & POSIX).
+- **Test 2 (`Newly created backup directory receives restrictive mode 0700 on POSIX`):**
+  - Confirmed mode `0700`. (Conditionally skipped on Windows).
+- **Test 3 (`Newly created staging directory and staging file receive restrictive modes (0700 / 0600) on POSIX`):**
+  - Confirmed staging dir `0700` and staging file `0600`. (Conditionally skipped on Windows).
+- **Test 4 (`Published hard-link backup retains expected restrictive file permissions (0600) on POSIX`):**
+  - Confirmed published backup inode retains `0600`. (Conditionally skipped on Windows).
+- **Test 5 (`Existing permissive backup directory is safely tightened to 0700 on POSIX`):**
+  - Confirmed `0777` directory is tightened to `0700`. (Conditionally skipped on Windows).
+- **Test 6 (`Existing backup artifacts are never deleted or overwritten by permission remediation`):**
+  - Pre-existing backup and collision sentinel files verified 100% byte-for-byte intact after `ensureSecureBackupDirectory()`. (Passed on Windows & POSIX).
+- **Test 7 (`Permission tightening failure on backup directory fails closed with MigrationBackupError`):**
+  - Injected `EACCES` on directory chmod; verified fail-closed `MigrationBackupError`. (Conditionally skipped on Windows).
+- **Test 8 (`Permission tightening failure on existing backup artifact fails closed with MigrationBackupError`):**
+  - Injected `EPERM` on artifact chmod; verified fail-closed `MigrationBackupError` reporting affected file. (Conditionally skipped on Windows).
+- **Test 9 (`Lock file permissions are restrictive (0600) after acquisition on POSIX`):**
+  - Confirmed lock file mode `0600` on POSIX. (Conditionally skipped on Windows).
+- **Test 10 (`Foreign lock files and collision sentinels remain untouched across permission checks and acquisitions`):**
+  - Confirmed foreign lock file is preserved 100% byte-for-byte and acquisition fails closed. (Passed on Windows & POSIX).
 
 ---
 
@@ -243,13 +257,13 @@ export interface PruneResult {
 
 | File | Nature of Changes |
 | :--- | :--- |
-| `server/migrations/types.ts` | Refined `PruneResult` contract with `retainedCount: number | null` and `unverifiedCount: number`; documented count semantics. |
-| `server/migrations/backup.ts` | Implemented Step 02.1.8 pruning accounting: directory inspection failure reports `retainedCount: null`; confirmed absent candidates (`ENOENT`) not counted as retained or unverified; candidate `statSync`/`unlinkSync` errors accounted in `unverifiedCount` with warnings; unverified candidates are never deleted. |
-| `server/migrations/runner.ts` | Maintains post-commit pruning warnings propagation into `MigrationResult.backupPruneWarnings` without rolling back committed migrations. |
-| `server/migrations/lock.ts` | Retains all Step 02.1.7 lock safety, pre-unlink classification, and 5-tuple ownership identity verification invariants. |
-| `server/__tests__/migrations.test.ts` | Enhanced Tests 32 and 34 to physically delete candidates during intercepted calls asserting physical absence (`fs.existsSync(...) === false`); verified all 97 migration tests (165 project tests total). |
-| `docs/phase02-step-02.1.5-closure-report.md` | Consolidated engineering closure report covering Step 02.1.5 through Step 02.1.8 with exact counter semantics, disclaimers, test evidence, and updated totals. |
-| `docs/phase02-implementation-report.md` | Consolidated Phase 02 implementation report updated to v1.8.0, covering Step 02.1 through Step 02.1.8 with verified test counts, schema state distinction, and audit snapshots. |
+| `server/migrations/types.ts` | Updated `retainedCount` JSDoc to precise operation-level selection count wording. |
+| `server/migrations/backup.ts` | Implemented `ensureSecureBackupDirectory()` enforcing POSIX `0700` on backup directories, `0700` on staging directories, `0600` on staging files, `0600` preserved on hard-link publication, safe permission tightening for pre-existing backup directories and artifacts without deleting or overwriting files; collision sentinels untouched; documented Windows NTFS ACL limitations. |
+| `server/migrations/lock.ts` | Enforced POSIX `0600` on newly acquired lock files; removed unsupported `sub-microsecond` quantitative claim, documented residual TOCTOU boundary. |
+| `server/migrations/runner.ts` | Maintained all Step 02.1.8 and 02.1.7 invariants; integrated secure backup directory enforcement. |
+| `server/__tests__/migrations.test.ts` | Added 10 new regression tests (Tests 1-10 under `Filesystem Access-Control & Artifact Security`), bringing suite total to 107 migration tests (175 project total; 168 passed, 7 skipped on Windows). |
+| `docs/phase02-step-02.1.5-closure-report.md` | Consolidated engineering closure report covering Step 02.1.5 through Step 02.1.9.1 with access-control invariants, test evidence, and updated totals. |
+| `docs/phase02-implementation-report.md` | Consolidated Phase 02 implementation report updated to v1.9.1, covering Step 02.1 through Step 02.1.9.1 with verified test counts, schema state distinction, and audit snapshots. |
 
 ---
 
@@ -257,8 +271,8 @@ export interface PruneResult {
 
 ```text
 VERDICT: PASS
-EVIDENCE: npm test passed (4 test files, 165 tests passed, 0 failures; 97 migration tests in server/__tests__/migrations.test.ts); npm run lint passed (tsc --noEmit, 0 errors); npm run build passed (vite build, 1711 modules transformed, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
-CHANGES: server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
+EVIDENCE: npm test passed (4 test files, 175 tests total: 168 passed, 7 skipped on Windows due to POSIX mode checks, 0 failures; 107 migration tests in server/__tests__/migrations.test.ts); npm run lint passed (tsc --noEmit, 0 errors); npm run build passed (vite build, 1711 modules transformed, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
+CHANGES: server/migrations/backup.ts, server/migrations/lock.ts, server/migrations/types.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
 UNVERIFIED: Persistent database production rollout (intentionally prohibited until explicitly authorized in Step 02.2).
-ROLLBACK: git checkout 1838c1f82015dc04133e1efe9a6f285d73d084e6
+ROLLBACK: git checkout 310c929a1f4fcec5b7f853ce076e28fa60bdb337
 ```

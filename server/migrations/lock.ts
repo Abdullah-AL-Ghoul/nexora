@@ -68,12 +68,14 @@ const memoryLocks = new Map<string, LockInfo>();
  *    - Defensive Mitigation: MigrationLock implements pre-unlink verification immediately before calling
  *      unlinkSync. If an adversarial process replaces the lock file between initial inspection and pre-unlink
  *      check, the runner detects the token or identity mismatch and refuses to delete the foreign lock.
- *    - Residual Window: In theory, if a file were replaced in the irreducible sub-microsecond window strictly
- *      between the pre-unlink check and the OS kernel executing unlinkSync(), a path-based unlink would delete
- *      the newly placed file.
+ *    - Residual TOCTOU Race Boundary: Pre-unlink ownership re-verification exists, but the check and
+ *      the subsequent path-based unlinkSync() are not a single atomic operating-system operation. A residual
+ *      time-of-check to time-of-use (TOCTOU) race remains if an external actor forcibly replaces the lock file
+ *      strictly between the re-verification read and the OS kernel unlinking the directory entry.
  *    - Required Operational Constraint: Under Approach 2 (Conservative Fail-Closed Recovery), external processes
  *      and operators MUST NOT out-of-band overwrite or delete active lock files while another process is running
- *      migrations. Automatic stale-lock reclamation is forbidden.
+ *      migrations. Automatic stale-lock reclamation is strictly prohibited. The residual race is not claimed to
+ *      be mathematically eliminated; rather, safety is enforced via fail-closed recovery and operational isolation.
  * 6. Parity between In-Memory and File Locks:
  *    - In-memory locks use Map<string, LockInfo> enforcing the identical token-matching release contract.
  */
@@ -383,7 +385,7 @@ export class MigrationLock {
     try {
       const lockDir = path.dirname(this.lockFilePath);
       if (!fs.existsSync(lockDir)) {
-        fs.mkdirSync(lockDir, { recursive: true });
+        fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
       }
 
       const lockPayload: LockInfo = {
@@ -394,8 +396,22 @@ export class MigrationLock {
         dbPath: this.lockKey,
       };
 
-      // Use 'wx' flag (exclusive creation) for atomic file lock
-      fs.writeFileSync(this.lockFilePath, JSON.stringify(lockPayload, null, 2), { flag: 'wx' });
+      // Use 'wx' flag (exclusive creation) with explicit restrictive mode (0600)
+      fs.writeFileSync(this.lockFilePath, JSON.stringify(lockPayload, null, 2), {
+        flag: 'wx',
+        mode: 0o600,
+      });
+
+      // On POSIX platforms, enforce 0600 mode explicitly in case host umask altered creation bits
+      if (process.platform !== 'win32') {
+        try {
+          fs.chmodSync(this.lockFilePath, 0o600);
+        } catch (chmodErr: any) {
+          throw new MigrationLockError(
+            `Failed to enforce restrictive permissions (0600) on newly acquired lock file "${this.lockFilePath}": ${chmodErr?.message}`
+          );
+        }
+      }
       this.acquisitionToken = token;
       this.acquired = true;
       return true;

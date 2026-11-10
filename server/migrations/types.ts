@@ -43,7 +43,8 @@ export interface PruneResult {
   /** Total number of backup files successfully unlinked by this invocation */
   prunedCount: number;
   /**
-   * Confirmed count of inspectable backups intentionally retained on disk.
+   * Count of inspectable candidate paths selected by this invocation to remain outside the deletion set.
+   * This is an operation-level selection count, not an atomic filesystem census.
    * Null if backup directory inspection failed (e.g. EACCES, EIO) and the total candidate count is unknown.
    */
   retainedCount: number | null;

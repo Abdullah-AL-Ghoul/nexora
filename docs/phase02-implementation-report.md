@@ -1,6 +1,6 @@
 # NEXORA — Phase 02 Implementation Report
-**Step 02.1 through Step 02.1.8 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability, Direct Storage Inspection, Strict Atomic Publication & Semantically Accurate Backup Pruning Safety Closure**  
-*Document Version:* 1.8.0  
+**Step 02.1 through Step 02.1.9.1 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Observability, Direct Storage Inspection, Strict Atomic Publication, Semantically Accurate Pruning & Artifact Access-Control Hardening**  
+*Document Version:* 1.9.1  
 *Execution Date:* November 2026  
 *Branch:* `main`  
 *Step 02.1 Approved Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
@@ -12,15 +12,16 @@
 *Step 02.1.6 Approved Baseline Commit:* `97c37fcea36a49ba8c53f36124ef3bbc9d0d1253`  
 *Step 02.1.7 Approved Baseline Commit:* `d044386bee4267859c28b87e44031306932ab31b`  
 *Step 02.1.8 Approved Baseline Commit:* `1838c1f82015dc04133e1efe9a6f285d73d084e6`  
+*Step 02.1.9 Approved Baseline Commit:* `310c929a1f4fcec5b7f853ce076e28fa60bdb337`  
 *Lead Engineers:* Principal Software Architect, Senior Backend Engineer, Database Reliability Engineer  
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completed implementation and engineering remediation of **STEP 02.1 through STEP 02.1.8: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Direct Storage Inspection, Ownership-Safe Release & Semantically Accurate Backup Pruning Accounting** for the NEXORA platform.
+This report documents the completed implementation and engineering remediation of **STEP 02.1 through STEP 02.1.9.1: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Direct Storage Inspection, Ownership-Safe Release, Semantically Accurate Backup Pruning Accounting & Filesystem Access-Control Hardening** for the NEXORA platform.
 
-All critical defects identified during the independent architecture reviews have been resolved with mathematical rigor and evidence-backed verification:
+All critical defects and security findings identified during independent architecture reviews have been resolved with mathematical rigor and evidence-backed verification:
 1. **Backup Ordering Fixed:** The runner was restructured so that a verified WAL-safe backup strictly precedes *any* database mutation, including registry creation (`schema_migrations`), DDL, or DML.
 2. **Read-Only Registry Helpers:** `getAppliedMigrations()` is now strictly read-only and never issues DDL. Registry creation is isolated to `ensureMigrationRegistry()`.
 3. **Lock Concurrency & Cross-Process Mutual Exclusion (Step 02.1.4):** Adopted Approach 2 (Conservative Fail-Closed Recovery), eliminating check-then-rename races. Automatic stale-lock deletion is completely removed; acquisitions fail closed with descriptive `MigrationLockError` reporting holder metadata and manual operator recovery instructions. Real OS child-process contention and abnormal termination (`SIGKILL`) verified green.
@@ -39,6 +40,7 @@ All critical defects identified during the independent architecture reviews have
 16. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
 17. **Strict Pre-Unlink Classification & Complete 5-Tuple Ownership Identity (Step 02.1.7):** Pre-unlink re-verification strictly maps `ABSENT` to `ALREADY_ABSENT`, `FILESYSTEM_ERROR` (`EACCES`/`EIO`) to `FILESYSTEM_ERROR` (preserving state and refusing unlink), `MALFORMED` to `OWNERSHIP_MISMATCH`, and verifies the complete 5-tuple ownership identity (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`).
 18. **Semantically Accurate Backup Pruning Accounting (Step 02.1.8 & Step 02.1.8.1):** Refactored `pruneOldBackups` to return `PruneResult` distinguishing `prunedCount` (successfully deleted), `retainedCount: number | null` (inspectable candidates selected to remain outside the deletion set, or `null` if directory inspection fails, never claiming 0), `unverifiedCount` (candidates with metadata or deletion failures), and `warnings`. Candidates absent on disk (`ENOENT`) are not counted as retained or unverified. High-fidelity tests mirror physical filesystem absence.
+19. **Backup & Lock Artifact Access-Control Hardening (Step 02.1.9.1):** Enforces explicit restrictive permissions on POSIX systems (`0700` on backup and staging directories, `0600` on staging and lock files, `0600` preserved on hard-link publication). Safely tightens pre-existing backup directories to `0700` and pre-existing backup artifacts to `0600` without deleting or overwriting any file. Unrelated files and collision sentinels remain untouched. Windows NTFS inherited ACL limitations are explicitly documented.
 
 ---
 
@@ -126,7 +128,7 @@ The pre-unlink re-verification immediately preceding `fs.unlinkSync()` strictly 
 - **`VALID`:** Verifies the complete 5-tuple ownership identity against the initial inspection:
   $$\text{Identity} = \langle \text{token}, \text{pid}, \text{hostname}, \text{acquiredAt}, \text{dbPath} \rangle$$
   If any field differs (e.g. process was replaced or recycled), returns `OWNERSHIP_MISMATCH`, preserves tokens, and refuses to delete.
-- **Threat-Model Boundary:** Portable atomic compare-and-unlink is not natively exposed by user-space OS kernels; pre-unlink verification substantially narrows the race window to an irreducible sub-microsecond OS kernel window. Under Approach 2 (Conservative Fail-Closed Recovery), external out-of-band lock deletion is strictly prohibited while migrations execute.
+- **Threat-Model Boundary:** Portable atomic compare-and-unlink is not natively exposed by user-space OS kernels; pre-unlink ownership re-verification exists, but the check and the subsequent path-based `unlinkSync()` are not a single atomic operating-system operation. A residual TOCTOU race remains between the check and unlink. Under Approach 2 (Conservative Fail-Closed Recovery), external out-of-band lock deletion is strictly prohibited while migrations execute. The residual race is not claimed to be mathematically eliminated; rather, safety is enforced via fail-closed recovery and operational isolation.
 
 ### 3.7 Semantically Accurate Backup Pruning Accounting (Step 02.1.8 & Step 02.1.8.1) ([`server/migrations/backup.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/backup.ts))
 
@@ -136,7 +138,8 @@ export interface PruneResult {
   /** Total number of backup files successfully unlinked by this invocation */
   prunedCount: number;
   /**
-   * Confirmed count of inspectable backups intentionally retained on disk.
+   * Count of inspectable candidate paths selected by this invocation to remain outside the deletion set.
+   * This is an operation-level selection count, not an atomic filesystem census.
    * Null if backup directory inspection failed (e.g. EACCES, EIO) and the total candidate count is unknown.
    */
   retainedCount: number | null;
@@ -145,6 +148,35 @@ export interface PruneResult {
    * could not be verified due to non-ENOENT filesystem failures.
    */
   unverifiedCount: number;
+  /** Observable warnings for all encountered filesystem failures */
+  warnings?: string[];
+}
+```
+
+### 3.8 Backup & Lock Artifact Access-Control Hardening (Step 02.1.9.1) ([`server/migrations/backup.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/backup.ts), [`server/migrations/lock.ts`](file:///C:/Users/abdal/Desktop/nexora/server/migrations/lock.ts))
+
+To close security finding F-03, the migration infrastructure enforces explicit restrictive filesystem permissions across all created and pre-existing artifacts:
+
+1. **POSIX Access-Control Invariants:**
+   - **Backup Directory Target Mode:** `0700` (`drwx------`). Restricts access exclusively to the process owner.
+   - **Staging Directory Target Mode:** `0700` (`drwx------`). Attempt-owned private directory `.tmp_staging_<UUID>`.
+   - **Staging File Target Mode:** `0600` (`-rw-------`). Created exclusively via `fs.openSync(stagingFile, 'wx', 0o600)` with explicit `fs.chmodSync(stagingFile, 0o600)`.
+   - **Published Backup Artifact:** Retains `0600` mode upon atomic publication via hard link (`fs.linkSync`), with post-publication mode verification.
+   - **Migration Lock File:** Created exclusively via `fs.writeFileSync(this.lockFilePath, ..., { flag: 'wx', mode: 0o600 })` and enforced to `0600` on POSIX. Parent database directory is never chmodded indiscriminately.
+
+2. **Pre-Existing Directory & Artifact Remediation Policy:**
+   - **Pre-Existing Backup Directory:** When `createWalSafeBackup()` executes, `ensureSecureBackupDirectory()` inspects `backupDir`. If permissions are more permissive than `0700` on POSIX (`(mode & 0o077) !== 0`), it tightens them to `0700` via `fs.chmodSync()`. If tightening fails or the directory remains permissive, it fails closed with `MigrationBackupError`.
+   - **Pre-Existing Nexora Backups:** Any pre-existing backup files matching `nexora.sqlite.bak_*.sqlite` on POSIX are inspected. If permissive, they are safely tightened to `0600`. If tightening fails, fails closed reporting the exact affected artifact.
+   - **Artifact Safety Rules:** Pre-existing backup files are **never deleted or overwritten**. Unrelated files and collision sentinels are never modified.
+
+3. **Windows Platform Behavior & ACL Limitations:**
+   - Windows NTFS does not use POSIX permission bits (`0700`/`0600`); Node.js `chmod` on Windows only toggles `FILE_ATTRIBUTE_READONLY`.
+   - The runner does NOT claim equivalent Windows protection based on POSIX mode bits. On Windows, access control relies on inherited NTFS Access Control Lists (ACLs) of the parent database directory. Windows deployments must secure the `.data` directory via appropriate NTFS ACLs for the service account.
+
+4. **Automated Regression Verification:**
+   - 10 new regression tests in `server/__tests__/migrations.test.ts` (175 project total; 168 passed, 7 explicitly skipped on Windows).
+   - Cross-platform tests verify directory initialization, artifact preservation, sentinel non-interference, and foreign lock protection.
+   - POSIX-specific mode assertions (`0700`, `0600`, tightening, fail-closed chmod errors) are conditionally skipped on Windows using `it.skipIf(isWindows)` and explicitly reported.
   /** Observable warnings for all encountered filesystem failures */
   warnings?: string[];
 }
@@ -178,19 +210,19 @@ Latest Verified Execution Output (Step 02.1.8.1):
 ```text
  RUN  v5.0.3 C:/Users/abdal/Desktop/nexora
 
- ✓ server/__tests__/pricing.test.ts (11 tests) 26ms
- ✓ server/__tests__/models.test.ts (27 tests) 586ms
- ✓ server/__tests__/api.test.ts (30 tests) 5143ms
- ✓ server/__tests__/migrations.test.ts (97 tests) 9967ms
+ ✓ server/__tests__/pricing.test.ts (11 tests) 25ms
+ ✓ server/__tests__/models.test.ts (27 tests) 263ms
+ ✓ server/__tests__/api.test.ts (30 tests) 2685ms
+ ✓ server/__tests__/migrations.test.ts (107 tests | 7 skipped) 9618ms
 
  Test Files  4 passed (4)
-      Tests  165 passed (165)
-   Start at  18:33:33
-   Duration  12.18s (tests 73%, transform 16%, import 10%)
+      Tests  168 passed | 7 skipped (175)
+   Start at  19:29:43
+   Duration  10.78s (tests 82%, transform 9%, import 8%)
 ```
 
-**165 tests passed green across 4 test suites (0 failures, 0 skipped, 100% green).**  
-- **`server/__tests__/migrations.test.ts`:** 97 tests passed.
+**175 total tests across 4 test suites (168 passed, 0 failures, 7 skipped on Windows platform due to POSIX mode checks, 100% green).**  
+- **`server/__tests__/migrations.test.ts`:** 107 tests total (100 passed, 7 skipped on Windows).
 - **`server/__tests__/api.test.ts`:** 30 tests passed.
 - **`server/__tests__/models.test.ts`:** 27 tests passed.
 - **`server/__tests__/pricing.test.ts`:** 11 tests passed.
@@ -201,6 +233,7 @@ Latest Verified Execution Output (Step 02.1.8.1):
 > - *Step 02.1.6 Baseline:* 144 total tests (76 migration tests).
 > - *Step 02.1.7 Baseline:* 159 total tests (91 migration tests).
 > - *Step 02.1.8 / Step 02.1.8.1 Final Baseline:* 165 total tests (97 migration tests).
+> - *Step 02.1.9.1 Access-Control Baseline:* 175 total tests (107 migration tests; 168 passed, 7 skipped on Windows).
 
 ### 4.2 TypeScript Type Checking (`npm run lint`)
 
@@ -232,7 +265,7 @@ Output:
 dist/index.html                             2.28 kB │ gzip:   0.99 kB
 dist/assets/index-DCvfrk5X.css             72.03 kB │ gzip:  11.42 kB
 dist/assets/index-B6eZXCK4.js             352.02 kB │ gzip: 110.40 kB
-✓ built in 5.61s
+✓ built in 3.54s
 ```
 Exit code: `0` (Clean production bundle).
 
@@ -253,27 +286,27 @@ Record counts: { products: 48, users: 5, orders: 6 }
 
 ---
 
-## 5. Summary of Remediation Changes (Step 02.1.1 through Step 02.1.8)
+## 5. Summary of Remediation Changes (Step 02.1.1 through Step 02.1.9.1)
 
 | File Path | Nature | Description of Remediation |
 |---|---|---|
 | `server/migrations/runner.ts` | **MODIFIED** | Enforced backup-before-mutation ordering; read-only `getAppliedMigrations`; fail-closed `getDbLocation`; lock acquisition before pending evaluation; removed public bypass flags; mandatory verified backup on non-empty persistent DB; fail-closed file fsync verification; preserved durability booleans in result; integrated observable lock release handling; integrated post-commit pruning observability with `backupPruneWarnings` |
-| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract; 64-bit cryptographic salt naming; attempt-owned unique staging (`.tmp_staging_<UUID>`); pre-reserved staging file `'wx'`; strict atomic no-clobber publication via `linkSync`; fail-closed on unsupported hard links preserving staging backup; directory durability error classification with `EACCES` fail-closed; cleanup paths execute direct unlink/rmdir without `existsSync` guards; treats `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim; refactored `pruneOldBackups` to return `PruneResult` with semantically accurate counts (`retainedCount: number | null`, `unverifiedCount: number`), explicitly unknown retained counts on directory failures, non-retention of absent candidates, and conservative retention of unverified candidates |
-| `server/migrations/lock.ts` | **MODIFIED** | Implemented Approach 2 (Conservative Fail-Closed Recovery); removed automatic stale-lock deletion; enforced exclusive acquisition with `'wx'`; unique UUID acquisition token; strict observable token-verified release (`LockReleaseResult`); direct inspection without boolean `existsSync()`; `readLockOwner()` returns `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); pre-unlink re-verification strictly maps `ABSENT` to `ALREADY_ABSENT`, `FILESYSTEM_ERROR` to `FILESYSTEM_ERROR`, `MALFORMED` to `OWNERSHIP_MISMATCH`; enforces complete 5-tuple ownership identity verification (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`); token and state preservation on error |
+| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract; 64-bit cryptographic salt naming; attempt-owned unique staging (`.tmp_staging_<UUID>`); pre-reserved staging file `'wx'`; strict atomic no-clobber publication via `linkSync`; fail-closed on unsupported hard links preserving staging backup; directory durability error classification with `EACCES` fail-closed; cleanup paths execute direct unlink/rmdir without `existsSync` guards; treats `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim; refactored `pruneOldBackups` to return `PruneResult` with semantically accurate counts (`retainedCount: number | null`, `unverifiedCount: number`), explicitly unknown retained counts on directory failures, non-retention of absent candidates, and conservative retention of unverified candidates; **Step 02.1.9.1**: implemented `ensureSecureBackupDirectory()` enforcing POSIX `0700` on backup directories, `0700` on staging directories, `0600` on staging files, `0600` preserved on hard-link publication, safe permission tightening for pre-existing backup directories and artifacts without deleting or overwriting files |
+| `server/migrations/lock.ts` | **MODIFIED** | Implemented Approach 2 (Conservative Fail-Closed Recovery); removed automatic stale-lock deletion; enforced exclusive acquisition with `'wx'`; unique UUID acquisition token; strict observable token-verified release (`LockReleaseResult`); direct inspection without boolean `existsSync()`; `readLockOwner()` returns `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); pre-unlink re-verification strictly maps `ABSENT` to `ALREADY_ABSENT`, `FILESYSTEM_ERROR` to `FILESYSTEM_ERROR`, `MALFORMED` to `OWNERSHIP_MISMATCH`; enforces complete 5-tuple ownership identity verification (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`); token and state preservation on error; **Step 02.1.9.1**: enforced POSIX `0600` on newly acquired lock files, removed unsupported `sub-microsecond` quantitative claim, documented residual TOCTOU boundary |
 | `server/migrations/001_baseline.ts` | **MODIFIED** | Implemented deterministic canonical baseline generation, structural metadata extraction, and fingerprint comparison |
-| `server/migrations/types.ts` | **MODIFIED** | Added `LockReleaseStatus`, `LockReleaseResult`, `MigrationRegistryError`; defined semantically accurate `PruneResult` (`retainedCount: number | null`, `unverifiedCount: number`); updated `BackupResult` with `fileSynced`, `directorySynced`, and `cleanupWarnings`; updated `MigrationResult` with durability flags, cleanup warnings, and `backupPruneWarnings` |
+| `server/migrations/types.ts` | **MODIFIED** | Added `LockReleaseStatus`, `LockReleaseResult`, `MigrationRegistryError`; defined semantically accurate `PruneResult` (`retainedCount: number | null`, `unverifiedCount: number`); updated `BackupResult` with `fileSynced`, `directorySynced`, and `cleanupWarnings`; updated `MigrationResult` with durability flags, cleanup warnings, and `backupPruneWarnings`; **Step 02.1.9.1**: updated JSDoc for `retainedCount` to precise operation-level selection count wording |
 | `server/schemas.ts` | **MODIFIED** | Removed `DRAFT` from certification verification status; aligned Zod enums with SQLite CHECK constraints; added media update refinement |
-| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 80 comprehensive regression tests (total: 97 migration tests, 165 total project tests) covering cross-process lock contention, abnormal termination (`SIGKILL`), cross-process release immunity, direct storage inspection distinguishing ENOENT/EACCES/EIO, pre-unlink strict error classification, 5-tuple ownership identity verification, deterministic lock replacement race, malformed lock protection, staging collision, publication collision, directory `EIO` / `EACCES` error classification, observable lock release, strict atomic hard links, backup cleanup invariants, and backup pruning accuracy with unverified artifact accounting |
+| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 90 comprehensive regression tests (total: 107 migration tests, 175 total project tests; 168 passed, 7 skipped on Windows) covering cross-process lock contention, abnormal termination (`SIGKILL`), cross-process release immunity, direct storage inspection distinguishing ENOENT/EACCES/EIO, pre-unlink strict error classification, 5-tuple ownership identity verification, deterministic lock replacement race, malformed lock protection, staging collision, publication collision, directory `EIO` / `EACCES` error classification, observable lock release, strict atomic hard links, backup cleanup invariants, backup pruning accuracy with unverified artifact accounting, and **Step 02.1.9.1** filesystem access-control enforcement (directory 0700, staging 0700/0600, publication 0600, lock 0600, existing artifact tightening, sentinel non-interference) |
 | `server/__tests__/models.test.ts` | **MODIFIED** | Added 5 new tests covering certification verification status constraints, admin expiration policy, and media update refinement |
-| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 through Step 02.1.8 defects, fixes, test counts, and evidence |
+| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 through Step 02.1.9.1 defects, fixes, test counts, and evidence |
 | `docs/phase02-step-02.1.2-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.2 fail-closed backup contract, race-safe lock reclamation, and evidence |
 | `docs/phase02-step-02.1.3-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.3 lock mutual-exclusion proof, artifact ownership, and durability enforcement |
 | `docs/phase02-step-02.1.4-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.4 cross-process lock safety, exclusive staging reservation, no-clobber publication, and durability error classification |
-| `docs/phase02-step-02.1.5-closure-report.md` | **CREATED / UPDATED** | Dedicated closure report detailing Step 02.1.5 through Step 02.1.8 lock release observability, direct storage inspection, ownership replacement race boundaries, pre-unlink classification, complete identity verification, backup pruning accuracy, unverified artifact accounting, strict atomic hard-link publication, backup cleanup invariants, and evidence |
+| `docs/phase02-step-02.1.5-closure-report.md` | **CREATED / UPDATED** | Dedicated closure report detailing Step 02.1.5 through Step 02.1.9.1 lock release observability, direct storage inspection, ownership replacement race boundaries, pre-unlink classification, complete identity verification, backup pruning accuracy, unverified artifact accounting, strict atomic hard-link publication, backup cleanup invariants, access-control hardening, and evidence |
 
 ---
 
 ## 6. Project Clearance & Next Steps
 
-1. **Step 02.1.8 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.5-closure-report.md`.
-2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, cross-process mutual exclusion, direct storage inspection, pre-unlink error classification, complete 5-tuple identity verification, semantically accurate backup pruning accounting, strict atomic publication, and baseline detection now proven safe and resilient under automated testing (165 passing tests, 0 failures), the database architecture is fully cleared for controlled migration application in Step 02.2.
+1. **Step 02.1.9.1 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.5-closure-report.md` and `docs/phase02-implementation-report.md`.
+2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, cross-process mutual exclusion, direct storage inspection, pre-unlink error classification, complete 5-tuple identity verification, semantically accurate backup pruning accounting, strict atomic publication, restrictive filesystem access control (0700/0600), and baseline detection now proven safe and resilient under automated testing (175 tests total; 168 passing, 7 skipped on Windows, 0 failures), the database architecture is fully cleared for controlled migration application upon separate explicit authorization in Step 02.2.

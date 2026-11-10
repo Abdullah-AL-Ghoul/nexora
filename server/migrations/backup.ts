@@ -7,6 +7,122 @@ import { type BackupResult, type PruneResult, MigrationBackupError } from './typ
 export type { BackupResult, PruneResult };
 
 /**
+ * Ensures the backup directory exists with restrictive POSIX access permissions (0700).
+ * If the directory already exists with permissive permissions on POSIX, safely tightens it to 0700
+ * or fails closed if permissions cannot be secured.
+ * Also tightens permissions of any pre-existing Nexora backup artifacts (*.sqlite) to 0600.
+ * Does NOT modify unrelated files or collision sentinels.
+ * On Windows, POSIX permission bits do not control inherited ACLs; explicit documentation applies.
+ */
+export function ensureSecureBackupDirectory(backupDir: string): void {
+  let dirStat: fs.Stats | null = null;
+  try {
+    dirStat = fs.statSync(backupDir);
+  } catch (statErr: any) {
+    if (statErr?.code !== 'ENOENT') {
+      throw new MigrationBackupError(
+        `Failed to inspect backup directory "${backupDir}" (${statErr?.code}): ${statErr?.message}`,
+        statErr
+      );
+    }
+  }
+
+  if (!dirStat) {
+    try {
+      fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+    } catch (mkdirErr: any) {
+      throw new MigrationBackupError(
+        `Failed to create backup directory "${backupDir}": ${mkdirErr?.message}`,
+        mkdirErr
+      );
+    }
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(backupDir, 0o700);
+      } catch (chmodErr: any) {
+        throw new MigrationBackupError(
+          `Failed to enforce restrictive mode (0700) on newly created backup directory "${backupDir}": ${chmodErr?.message}`,
+          chmodErr
+        );
+      }
+    }
+    return;
+  }
+
+  // Directory already exists: on POSIX, inspect effective permissions
+  if (process.platform !== 'win32') {
+    const currentMode = dirStat.mode & 0o777;
+    // Check if group or others have any permissions (read, write, or execute)
+    if ((currentMode & 0o077) !== 0) {
+      try {
+        fs.chmodSync(backupDir, 0o700);
+      } catch (chmodErr: any) {
+        throw new MigrationBackupError(
+          `Backup directory "${backupDir}" has permissive permissions (${currentMode.toString(8)}) and could not be tightened to 0700 (${chmodErr?.code}): ${chmodErr?.message}. Operator intervention required to secure backup directory.`,
+          chmodErr
+        );
+      }
+
+      const recheckStat = fs.statSync(backupDir);
+      if ((recheckStat.mode & 0o077) !== 0) {
+        throw new MigrationBackupError(
+          `Backup directory "${backupDir}" remains permissive (${(recheckStat.mode & 0o777).toString(8)}) after tightening. Operator intervention required.`
+        );
+      }
+    }
+
+    // Tighten pre-existing Nexora backup artifacts to 0600
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(backupDir);
+    } catch (readErr: any) {
+      throw new MigrationBackupError(
+        `Failed to enumerate backup directory "${backupDir}" to verify artifact permissions: ${readErr?.message}`,
+        readErr
+      );
+    }
+
+    for (const entry of entries) {
+      // Narrowly scoped strictly to verified Nexora backup artifacts
+      // Never touch unrelated files or collision sentinels
+      if (entry.startsWith('nexora.sqlite.bak_') && entry.endsWith('.sqlite')) {
+        const artifactPath = path.join(backupDir, entry);
+        let artStat: fs.Stats;
+        try {
+          artStat = fs.statSync(artifactPath);
+        } catch (artStatErr: any) {
+          throw new MigrationBackupError(
+            `Failed to stat existing backup artifact "${artifactPath}": ${artStatErr?.message}`,
+            artStatErr
+          );
+        }
+
+        if (!artStat.isFile()) continue;
+
+        const artMode = artStat.mode & 0o777;
+        if ((artMode & 0o077) !== 0) {
+          try {
+            fs.chmodSync(artifactPath, 0o600);
+          } catch (artChmodErr: any) {
+            throw new MigrationBackupError(
+              `Failed to secure permissive existing backup artifact "${artifactPath}" (${artChmodErr?.code}): ${artChmodErr?.message}. Operator intervention required.`,
+              artChmodErr
+            );
+          }
+
+          const verifiedArtStat = fs.statSync(artifactPath);
+          if ((verifiedArtStat.mode & 0o077) !== 0) {
+            throw new MigrationBackupError(
+              `Existing backup artifact "${artifactPath}" remains permissive (${(verifiedArtStat.mode & 0o777).toString(8)}) after tightening. Operator intervention required.`
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
  * Creates a transactionally consistent, WAL-safe online backup of a file-backed SQLite database
  * using Node.js 24's native `backup()` API.
  *
@@ -32,6 +148,14 @@ export type { BackupResult, PruneResult };
  * 5. Integrity & Parity Verification:
  *    - Verifies pagesCopied > 0, stat size > 0, PRAGMA integrity_check, PRAGMA quick_check,
  *      and exact source table and record count parity.
+ * 6. Filesystem Access Control & Permission Invariants (Step 02.1.9.1):
+ *    - Backup directory created with restrictive mode 0700. Existing permissive backup directories are safely
+ *      tightened to 0700 or fail closed with MigrationBackupError.
+ *    - Staging directories created with mode 0700; staging files created exclusively with mode 0600.
+ *    - Existing Nexora backup artifacts (*.sqlite) in backupDir are tightened to 0600 on POSIX; unrelated sentinels
+ *      remain untouched.
+ *    - Hard-link published backups retain the 0600 mode from staging file.
+ *    - On Windows, POSIX permission bits do not control inherited ACLs; documented platform limitation applies.
  *
  * @param db Active DatabaseSync instance
  * @param dbLocation Filesystem location of the database file
@@ -72,14 +196,8 @@ export async function createWalSafeBackup(
   let ownedFinalBackupPath: string | null = null;
 
   try {
-    try {
-      fs.mkdirSync(backupDir, { recursive: true });
-    } catch (mkdirErr: any) {
-      throw new MigrationBackupError(
-        `Failed to create backup directory "${backupDir}": ${mkdirErr?.message}`,
-        mkdirErr
-      );
-    }
+    // Objective 6: Enforce restrictive permissions on backupDir and existing backup artifacts
+    ensureSecureBackupDirectory(backupDir);
 
     // Generate collision-resistant filename with ISO timestamp and 64-bit cryptographic salt
     const now = new Date();
@@ -104,13 +222,13 @@ export async function createWalSafeBackup(
     }
 
     // Objective C: Exclusive Staging Ownership
-    // 1. Create a private attempt staging directory using non-recursive mkdir.
+    // 1. Create a private attempt staging directory using non-recursive mkdir with mode 0700.
     // If stagingDir already exists, mkdirSync throws EEXIST and ownedStagingDir remains null.
     const attemptId = crypto.randomUUID();
     const stagingDir = path.join(backupDir, `.tmp_staging_${attemptId}`);
 
     try {
-      fs.mkdirSync(stagingDir);
+      fs.mkdirSync(stagingDir, { mode: 0o700 });
     } catch (mkdirErr: any) {
       if (mkdirErr?.code === 'EEXIST') {
         throw new MigrationBackupError(`Staging reservation collision: directory already exists: ${stagingDir}`);
@@ -118,19 +236,41 @@ export async function createWalSafeBackup(
       throw mkdirErr;
     }
 
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(stagingDir, 0o700);
+      } catch (chmodErr: any) {
+        throw new MigrationBackupError(
+          `Failed to enforce restrictive mode (0700) on staging directory "${stagingDir}": ${chmodErr?.message}`,
+          chmodErr
+        );
+      }
+    }
+
     // Directory successfully created exclusively by this attempt
     ownedStagingDir = stagingDir;
 
-    // 2. Pre-create and reserve staging file exclusively using 'wx' flag
+    // 2. Pre-create and reserve staging file exclusively using 'wx' flag with mode 0600
     const stagingFile = path.join(stagingDir, 'staging.sqlite');
     try {
-      const stagingFd = fs.openSync(stagingFile, 'wx');
+      const stagingFd = fs.openSync(stagingFile, 'wx', 0o600);
       fs.closeSync(stagingFd);
     } catch (openErr: any) {
       if (openErr?.code === 'EEXIST') {
         throw new MigrationBackupError(`Staging reservation collision: file already exists: ${stagingFile}`);
       }
       throw openErr;
+    }
+
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(stagingFile, 0o600);
+      } catch (chmodErr: any) {
+        throw new MigrationBackupError(
+          `Failed to enforce restrictive mode (0600) on staging file "${stagingFile}": ${chmodErr?.message}`,
+          chmodErr
+        );
+      }
     }
 
     ownedStagingFile = stagingFile;
@@ -217,6 +357,21 @@ export async function createWalSafeBackup(
 
     // Mark final backup as owned
     ownedFinalBackupPath = finalBackupPath;
+
+    // On POSIX, verify and enforce that published hard link retains restrictive permissions (0600)
+    if (process.platform !== 'win32') {
+      try {
+        const pubStat = fs.statSync(finalBackupPath);
+        if ((pubStat.mode & 0o077) !== 0) {
+          fs.chmodSync(finalBackupPath, 0o600);
+        }
+      } catch (pubChmodErr: any) {
+        throw new MigrationBackupError(
+          `Failed to verify or enforce restrictive mode (0600) on published backup "${finalBackupPath}": ${pubChmodErr?.message}`,
+          pubChmodErr
+        );
+      }
+    }
 
     // Fsync the final backup file to ensure metadata/data durability at final destination
     try {
