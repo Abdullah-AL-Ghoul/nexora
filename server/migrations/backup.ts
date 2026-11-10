@@ -148,17 +148,15 @@ export async function createWalSafeBackup(
       );
     }
 
-    // Objective D: Atomic No-Clobber Final Backup Publication
-    // Check destination again before promotion to catch pre-publication collisions
+    // Objective D: Strict Atomic No-Clobber Final Backup Publication (Hard-Link Primitive)
+    // fs.linkSync creates an atomic directory entry linking directly to the verified staging file.
+    // If destination exists, linkSync fails atomically with EEXIST without modifying destination.
     if (fs.existsSync(finalBackupPath)) {
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     }
 
-    let published = false;
     try {
-      // First attempt: atomic hard-link publication
       fs.linkSync(stagingFile, finalBackupPath);
-      published = true;
     } catch (linkErr: any) {
       if (linkErr?.code === 'EEXIST') {
         throw new MigrationBackupError(
@@ -166,33 +164,18 @@ export async function createWalSafeBackup(
         );
       }
 
-      // If hard links are not supported or permitted on this OS/filesystem (e.g. Win32 EPERM, EXDEV, ENOSYS, ENOTSUP),
-      // use atomic no-clobber copy (COPYFILE_EXCL). COPYFILE_EXCL is guaranteed by OS kernel to fail if dest exists.
-      if (['EPERM', 'EXDEV', 'ENOSYS', 'ENOTSUP', 'EINVAL'].includes(linkErr?.code)) {
-        try {
-          fs.copyFileSync(stagingFile, finalBackupPath, fs.constants.COPYFILE_EXCL);
-          published = true;
-        } catch (copyErr: any) {
-          if (copyErr?.code === 'EEXIST') {
-            throw new MigrationBackupError(
-              `Backup destination already exists (collision at publication boundary): ${finalBackupPath}`
-            );
-          }
-          throw new MigrationBackupError(
-            `Failed to publish backup to ${finalBackupPath} using no-clobber copy: ${copyErr?.message}`,
-            copyErr
-          );
-        }
-      } else {
-        throw new MigrationBackupError(
-          `Failed to publish backup to ${finalBackupPath} via link: ${linkErr?.message}`,
-          linkErr
-        );
-      }
-    }
-
-    if (!published) {
-      throw new MigrationBackupError(`Failed to publish backup to ${finalBackupPath}: unknown publication failure`);
+      // Hard links are the only supported atomic publication primitive.
+      // If the platform/filesystem does not support hard links (e.g. cross-device EXDEV, unprivileged EPERM, ENOTSUP),
+      // FAIL CLOSED. Do NOT fall back to non-atomic file copying in the migration safety path.
+      // Verified staging artifact is preserved for documented operator recovery.
+      ownedStagingFile = null;
+      ownedStagingDir = null;
+      throw new MigrationBackupError(
+        `Atomic backup publication failed: filesystem does not support atomic hard links (${linkErr?.code}: ${linkErr?.message}). ` +
+        `To ensure fail-closed database safety without risking partial or clobbered backups, migrations cannot proceed without atomic publication primitives. ` +
+        `Verified staging backup preserved at "${stagingFile}".`,
+        linkErr
+      );
     }
 
     // Mark final backup as owned
@@ -224,41 +207,47 @@ export async function createWalSafeBackup(
         fs.closeSync(dirFd);
       }
     } catch (dirErr: any) {
+      // Distinguish unsupported platform operations from access denial and true storage failures:
+      // 1. Windows FlushFileBuffers on directory handles throws EPERM, EISDIR, or EBADF:
       const isKnownWin32Limitation =
-        process.platform === 'win32' && ['EPERM', 'EISDIR', 'EBADF', 'EACCES'].includes(dirErr?.code);
+        process.platform === 'win32' && ['EPERM', 'EISDIR', 'EBADF'].includes(dirErr?.code);
+      // 2. Specific filesystems where directory fsync is not implemented:
       const isKnownFsLimitation = ['ENOTSUP', 'ENOSYS', 'EINVAL'].includes(dirErr?.code);
 
       if (isKnownWin32Limitation || isKnownFsLimitation) {
         // Documented platform/filesystem limitation: directory fsync is unsupported by OS
         directorySynced = false;
       } else {
-        // True storage I/O failure (e.g. EIO, ENOSPC, EROFS, EDQUOT):
-        // FAIL CLOSED: do not silently swallow true storage hardware failures!
+        // EACCES (Permission Denied) or EIO/ENOSPC/EROFS/EDQUOT (Storage I/O failure):
+        // MUST FAIL CLOSED: do not silently treat permission denial or storage hardware failures as "unsupported"!
         throw new MigrationBackupError(
-          `Storage I/O failure during directory synchronization on ${backupDir}: ${dirErr?.message}`,
+          `Directory synchronization failed on ${backupDir} (${dirErr?.code}): ${dirErr?.message}`,
           dirErr
         );
       }
     }
 
-    // Clean up staging directory and staging files after successful publication
+    const cleanupWarnings: string[] = [];
+
+    // Clean up staging files after successful atomic publication
     if (ownedStagingFile) {
       for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
         try {
           if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
-        } catch {
-          // Ignore staging cleanup error
+        } catch (cleanErr: any) {
+          cleanupWarnings.push(`Failed to remove staging artifact "${artifact}": ${cleanErr?.message}`);
         }
       }
       ownedStagingFile = null;
     }
+
     if (ownedStagingDir) {
       try {
         if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
-      } catch {
-        // Ignore staging directory cleanup error
+        ownedStagingDir = null;
+      } catch (cleanDirErr: any) {
+        cleanupWarnings.push(`Failed to remove staging directory "${ownedStagingDir}": ${cleanDirErr?.message}`);
       }
-      ownedStagingDir = null;
     }
 
     return {
@@ -268,8 +257,11 @@ export async function createWalSafeBackup(
       fileSynced,
       directorySynced,
       completedAt: new Date().toISOString(),
+      ...(cleanupWarnings.length > 0 ? { cleanupWarnings } : {}),
     };
   } catch (err: any) {
+    const cleanupFailures: string[] = [];
+
     // Artifact Ownership Rule:
     // Only clean up the artifacts that were created and owned by this attempt.
     // Never touch or delete pre-existing backup files, collision sentinels, or other attempts' directories.
@@ -277,8 +269,8 @@ export async function createWalSafeBackup(
       for (const artifact of [ownedFinalBackupPath, `${ownedFinalBackupPath}-wal`, `${ownedFinalBackupPath}-shm`]) {
         try {
           if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
-        } catch {
-          // Ignore cleanup error on attempt-owned final file
+        } catch (fErr: any) {
+          cleanupFailures.push(`Failed to remove unverified published artifact "${artifact}": ${fErr?.message}`);
         }
       }
     }
@@ -287,8 +279,8 @@ export async function createWalSafeBackup(
       for (const artifact of [ownedStagingFile, `${ownedStagingFile}-wal`, `${ownedStagingFile}-shm`]) {
         try {
           if (fs.existsSync(artifact)) fs.unlinkSync(artifact);
-        } catch {
-          // Ignore cleanup error on attempt-owned staging file
+        } catch (sErr: any) {
+          cleanupFailures.push(`Failed to remove staging file "${artifact}": ${sErr?.message}`);
         }
       }
     }
@@ -296,13 +288,27 @@ export async function createWalSafeBackup(
     if (ownedStagingDir) {
       try {
         if (fs.existsSync(ownedStagingDir)) fs.rmdirSync(ownedStagingDir);
-      } catch {
-        // Ignore cleanup error on attempt-owned staging directory
+      } catch (dErr: any) {
+        cleanupFailures.push(`Failed to remove staging directory "${ownedStagingDir}": ${dErr?.message}`);
       }
     }
 
-    if (err instanceof MigrationBackupError) throw err;
-    throw new MigrationBackupError(`WAL backup creation failed for ${dbLocation}: ${err?.message}`, err);
+    let errorToThrow =
+      err instanceof MigrationBackupError
+        ? err
+        : new MigrationBackupError(`WAL backup creation failed for ${dbLocation}: ${err?.message}`, err);
+
+    if (cleanupFailures.length > 0) {
+      errorToThrow = new MigrationBackupError(
+        `${errorToThrow.message}\n[Artifact Cleanup Warning] ${cleanupFailures.join('; ')}. Orphaned staging artifacts require operator verification at: ${ownedStagingDir || ownedFinalBackupPath}`,
+        errorToThrow
+      );
+      (errorToThrow as any).cleanupFailures = cleanupFailures;
+      (errorToThrow as any).orphanedStagingDir = ownedStagingDir;
+      (errorToThrow as any).orphanedFinalPath = ownedFinalBackupPath;
+    }
+
+    throw errorToThrow;
   }
 }/**
  * Verifies integrity of a backup SQLite file using PRAGMA integrity_check and PRAGMA quick_check,

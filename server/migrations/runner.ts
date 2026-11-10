@@ -228,6 +228,10 @@ export async function runMigrations(
   let backupPath: string | undefined;
   let backupFileSynced: boolean | undefined;
   let backupDirectorySynced: boolean | undefined;
+  let backupCleanupWarnings: string[] | undefined;
+
+  let migrationError: unknown = null;
+  let finalResult: MigrationResult | null = null;
 
   try {
     // Re-read migration state while holding the lock
@@ -242,7 +246,7 @@ export async function runMigrations(
     // Fast-path idempotency: if another process or prior run applied all migrations, return immediately
     if (pending.length === 0) {
       const currentVersion = applied.length > 0 ? Math.max(...applied.map((m) => m.version)) : 0;
-      return {
+      finalResult = {
         appliedCount: 0,
         appliedVersions: [],
         currentVersion,
@@ -250,6 +254,7 @@ export async function runMigrations(
         baselineCreated: false,
         durationMs: Date.now() - startTime,
       };
+      return finalResult;
     }
 
     // Fail-Closed Backup Contract:
@@ -283,6 +288,7 @@ export async function runMigrations(
         backupPath = backupResult.backupPath;
         backupFileSynced = backupResult.fileSynced;
         backupDirectorySynced = backupResult.directorySynced;
+        backupCleanupWarnings = backupResult.cleanupWarnings;
       } else {
         // Documented exception: Fresh, empty database (0 application tables) has no existing state to preserve.
       }
@@ -356,7 +362,7 @@ export async function runMigrations(
     const allApplied = getAppliedMigrations(db);
     const currentVersion = allApplied.length > 0 ? Math.max(...allApplied.map((m) => m.version)) : 0;
 
-    return {
+    finalResult = {
       appliedCount: appliedVersions.length,
       appliedVersions,
       currentVersion,
@@ -365,11 +371,37 @@ export async function runMigrations(
       backupPath,
       backupFileSynced,
       backupDirectorySynced,
+      ...(backupCleanupWarnings ? { backupCleanupWarnings } : {}),
       durationMs: Date.now() - startTime,
     };
+
+    return finalResult;
+  } catch (err) {
+    migrationError = err;
+    throw err;
   } finally {
     if (lock) {
-      lock.release();
+      const releaseRes = lock.release();
+      if (!releaseRes.success) {
+        const releaseMsg = `Migration lock release failed (${releaseRes.status}): ${releaseRes.details || releaseRes.error?.message}. Lock file may remain at "${releaseRes.lockPath}". Manual operator intervention may be required.`;
+        if (migrationError) {
+          // Both migration failed AND lock release failed: preserve both errors
+          const combinedErr = new MigrationLockError(
+            `${migrationError instanceof Error ? migrationError.message : String(migrationError)}\n[Secondary Failure] ${releaseMsg}`,
+            releaseRes,
+            migrationError
+          );
+          throw combinedErr;
+        } else {
+          // Migrations applied successfully, but lock release failed
+          const opErr = new MigrationLockError(
+            `Migrations completed successfully (currentVersion ${finalResult?.currentVersion}), but lock release failed (${releaseRes.status}): ${releaseRes.details || releaseRes.error?.message}. Lock file may remain at "${releaseRes.lockPath}".`,
+            releaseRes
+          );
+          (opErr as any).migrationResult = finalResult;
+          throw opErr;
+        }
+      }
     }
   }
 }

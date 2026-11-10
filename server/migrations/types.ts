@@ -24,6 +24,7 @@ export interface MigrationResult {
   backupPath?: string;
   backupFileSynced?: boolean;
   backupDirectorySynced?: boolean;
+  backupCleanupWarnings?: string[];
   durationMs: number;
 }
 
@@ -34,6 +35,22 @@ export interface BackupResult {
   fileSynced: boolean;
   directorySynced: boolean;
   completedAt: string;
+  cleanupWarnings?: string[];
+}
+
+export type LockReleaseStatus =
+  | 'RELEASED'
+  | 'ALREADY_ABSENT'
+  | 'NOT_HELD'
+  | 'OWNERSHIP_MISMATCH'
+  | 'FILESYSTEM_ERROR';
+
+export interface LockReleaseResult {
+  status: LockReleaseStatus;
+  success: boolean;
+  lockPath: string | null;
+  error?: Error;
+  details?: string;
 }
 
 export interface MigrationRunnerOptions {
@@ -51,15 +68,19 @@ export class MigrationError extends Error {
 }
 
 export class MigrationLockError extends MigrationError {
-  constructor(message: string) {
-    super(message);
+  constructor(
+    message: string,
+    public readonly releaseResult?: unknown,
+    cause?: unknown
+  ) {
+    super(message, cause);
     this.name = 'MigrationLockError';
   }
 }
 
 export class MigrationBackupError extends MigrationError {
-  constructor(message: string, public readonly cause?: unknown) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, cause);
     this.name = 'MigrationBackupError';
   }
 }

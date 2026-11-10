@@ -917,6 +917,191 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       externalLock.release();
       db.close();
     });
+
+    it('14. Observable lock release results: RELEASED, ALREADY_ABSENT, and NOT_HELD statuses', async () => {
+      const lock = new MigrationLock(dbPath);
+      // Not yet acquired
+      const resNotHeld = lock.release();
+      expect(resNotHeld.status).toBe('NOT_HELD');
+      expect(resNotHeld.success).toBe(true);
+      expect(lock.isAcquired()).toBe(false);
+
+      // Acquire
+      await lock.acquire(1000);
+      expect(lock.isAcquired()).toBe(true);
+      expect(typeof lock.getAcquisitionToken()).toBe('string');
+
+      // Normal release
+      const resReleased = lock.release();
+      expect(resReleased.status).toBe('RELEASED');
+      expect(resReleased.success).toBe(true);
+      expect(lock.isAcquired()).toBe(false);
+      expect(lock.getAcquisitionToken()).toBeNull();
+
+      // Second release when already released
+      const resAgain = lock.release();
+      expect(resAgain.status).toBe('NOT_HELD');
+      expect(resAgain.success).toBe(true);
+
+      // Lock file manually removed before release
+      await lock.acquire(1000);
+      const lockFile = `${dbPath}.migration.lock`;
+      expect(fs.existsSync(lockFile)).toBe(true);
+      fs.unlinkSync(lockFile);
+
+      const resAbsent = lock.release();
+      expect(resAbsent.status).toBe('ALREADY_ABSENT');
+      expect(resAbsent.success).toBe(true);
+      expect(lock.isAcquired()).toBe(false);
+    });
+
+    it('15. Filesystem error during release preserves acquisitionToken and acquired state', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      expect(token).toBeDefined();
+
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+        const err: any = new Error('Simulated I/O unlink error');
+        err.code = 'EIO';
+        throw err;
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('FILESYSTEM_ERROR');
+        expect(res.success).toBe(false);
+        expect(res.error).toBeDefined();
+
+        // Must PRESERVE state on filesystem failure so operator or retry can act
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+      } finally {
+        unlinkSpy.mockRestore();
+        // Now release succeeds
+        const cleanRes = lock.release();
+        expect(cleanRes.status).toBe('RELEASED');
+        expect(cleanRes.success).toBe(true);
+      }
+    });
+
+    it('16. Ownership mismatch during release preserves lock on disk and internal tokens', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      // Simulate external overwrite of lock file with another PID/token
+      const foreignPayload = {
+        token: crypto.randomUUID(),
+        pid: 99999,
+        hostname: 'foreign-host',
+        acquiredAt: new Date().toISOString(),
+        dbPath,
+      };
+      fs.writeFileSync(lockFile, JSON.stringify(foreignPayload));
+
+      const res = lock.release();
+      expect(res.status).toBe('OWNERSHIP_MISMATCH');
+      expect(res.success).toBe(false);
+      expect(res.details).toContain('Refusing to delete foreign lock');
+
+      // Disk file must NOT be unlinked
+      expect(fs.existsSync(lockFile)).toBe(true);
+      const diskContent = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+      expect(diskContent.token).toBe(foreignPayload.token);
+
+      // Internal tokens must be preserved
+      expect(lock.isAcquired()).toBe(true);
+      expect(lock.getAcquisitionToken()).toBe(token);
+
+      // Clean up foreign lock
+      fs.unlinkSync(lockFile);
+    });
+
+    it('17. runMigrations surfaces lock release failure as MigrationLockError preserving migration result', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.endsWith('.migration.lock')) {
+          const err: any = new Error('Simulated lock unlink EIO');
+          err.code = 'EIO';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        let caughtErr: any = null;
+        try {
+          await runMigrations(db);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(MigrationLockError);
+        expect(caughtErr.message).toContain('Migrations completed successfully');
+        expect(caughtErr.message).toContain('lock release failed (FILESYSTEM_ERROR)');
+        expect(caughtErr.releaseResult).toBeDefined();
+        expect(caughtErr.releaseResult.status).toBe('FILESYSTEM_ERROR');
+        expect(caughtErr.migrationResult).toBeDefined();
+        expect(caughtErr.migrationResult.currentVersion).toBe(2);
+        expect(caughtErr.migrationResult.appliedCount).toBe(2);
+      } finally {
+        unlinkSpy.mockRestore();
+        const lockFile = `${dbPath}.migration.lock`;
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+        db.close();
+      }
+    });
+
+    it('18. runMigrations combines migration failure and lock release failure with cause preserved', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.endsWith('.migration.lock')) {
+          const err: any = new Error('Simulated lock unlink EPERM');
+          err.code = 'EPERM';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+        const err: any = new Error('Simulated backup disk error');
+        err.code = 'EIO';
+        throw err;
+      });
+
+      try {
+        let caughtErr: any = null;
+        try {
+          await runMigrations(db);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(MigrationLockError);
+        expect(caughtErr.message).toContain('Simulated backup disk error');
+        expect(caughtErr.message).toContain('[Secondary Failure]');
+        expect(caughtErr.message).toContain('Migration lock release failed');
+        expect(caughtErr.releaseResult).toBeDefined();
+        expect(caughtErr.releaseResult.status).toBe('FILESYSTEM_ERROR');
+        expect(caughtErr.cause).toBeDefined();
+      } finally {
+        unlinkSpy.mockRestore();
+        fsyncSpy.mockRestore();
+        const lockFile = `${dbPath}.migration.lock`;
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+        db.close();
+      }
+    });
   });
 
   describe('Strict Baseline Fingerprint & Structural Inspection', () => {
@@ -1417,6 +1602,161 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         expect(dirFsyncAttempted).toBe(true);
 
         // Database was NOT modified because directory storage I/O failure aborts migration
+        const checkRegistry = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations';").get();
+        expect(checkRegistry).toBeUndefined();
+      } finally {
+        fsyncSpy.mockRestore();
+        db.close();
+      }
+    });
+
+    it('17. Strict Atomic Hard Links: fails closed with MigrationBackupError when hard links unsupported, preserving verified staging', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
+        const err: any = new Error('Cross-device link or unsupported hard links');
+        err.code = 'EXDEV';
+        throw err;
+      });
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+
+      try {
+        let caughtErr: any = null;
+        try {
+          await createWalSafeBackup(db, dbPath, 2);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(MigrationBackupError);
+        expect(caughtErr.message).toContain('Atomic backup publication failed');
+        expect(caughtErr.message).toContain('EXDEV');
+        expect(caughtErr.message).toContain('Verified staging backup preserved at');
+
+        // Check that staging directory and verified staging file WERE preserved
+        const stagingDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+        expect(stagingDirs.length).toBe(1);
+        const stagingPath = path.join(backupDir, stagingDirs[0], 'staging.sqlite');
+        expect(fs.existsSync(stagingPath)).toBe(true);
+        expect(fs.statSync(stagingPath).size).toBeGreaterThan(0);
+      } finally {
+        linkSpy.mockRestore();
+        const stagingDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+        for (const dir of stagingDirs) {
+          fs.rmSync(path.join(backupDir, dir), { recursive: true, force: true });
+        }
+        db.close();
+      }
+    });
+
+    it('18. Post-publication staging cleanup failure records cleanupWarnings without invalidating backup', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const origRmdir = fs.rmdirSync;
+      const rmdirSpy = vi.spyOn(fs, 'rmdirSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.includes('.tmp_staging_')) {
+          const err: any = new Error('Simulated busy staging directory lock');
+          err.code = 'EBUSY';
+          throw err;
+        }
+        return origRmdir(p);
+      });
+
+      try {
+        const result = await createWalSafeBackup(db, dbPath, 2);
+        expect(result.backupPath).toBeDefined();
+        expect(fs.existsSync(result.backupPath)).toBe(true);
+        expect(result.cleanupWarnings).toBeDefined();
+        expect(result.cleanupWarnings!.length).toBeGreaterThan(0);
+        expect(result.cleanupWarnings![0]).toContain('Failed to remove staging directory');
+      } finally {
+        rmdirSpy.mockRestore();
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        const stagingDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+        for (const dir of stagingDirs) {
+          fs.rmSync(path.join(backupDir, dir), { recursive: true, force: true });
+        }
+        db.close();
+      }
+    });
+
+    it('19. Backup failure with failing staging cleanup produces MigrationBackupError with artifact warning and orphaned staging dir', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      // Induce fsync failure
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+        const err: any = new Error('Simulated disk flush error');
+        err.code = 'EIO';
+        throw err;
+      });
+
+      // Also make cleanup fail on staging dir
+      const origRmdir = fs.rmdirSync;
+      const rmdirSpy = vi.spyOn(fs, 'rmdirSync').mockImplementation((p: fs.PathLike) => {
+        if (typeof p === 'string' && p.includes('.tmp_staging_')) {
+          const err: any = new Error('Simulated staging rmdir permission denied');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origRmdir(p);
+      });
+
+      try {
+        let caughtErr: any = null;
+        try {
+          await createWalSafeBackup(db, dbPath, 2);
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(MigrationBackupError);
+        expect(caughtErr.message).toContain('[Artifact Cleanup Warning]');
+        expect((caughtErr as any).cleanupFailures).toBeDefined();
+        expect((caughtErr as any).orphanedStagingDir).toBeDefined();
+      } finally {
+        fsyncSpy.mockRestore();
+        rmdirSpy.mockRestore();
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        if (fs.existsSync(backupDir)) {
+          const stagingDirs = fs.readdirSync(backupDir).filter((f) => f.startsWith('.tmp_staging_'));
+          for (const dir of stagingDirs) {
+            fs.rmSync(path.join(backupDir, dir), { recursive: true, force: true });
+          }
+        }
+        db.close();
+      }
+    });
+
+    it('20. Directory Durability: EACCES on directory handle fails closed with MigrationBackupError', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const origFsyncSync = fs.fsyncSync;
+      let dirFsyncAttempted = false;
+
+      const fsyncSpy = vi.spyOn(fs, 'fsyncSync').mockImplementation((fd: number) => {
+        if (dirFsyncAttempted) {
+          const err: any = new Error('Permission denied on directory sync');
+          err.code = 'EACCES';
+          throw err;
+        }
+        dirFsyncAttempted = true;
+        return origFsyncSync(fd);
+      });
+
+      try {
+        await expect(runMigrations(db)).rejects.toThrow(MigrationBackupError);
+        expect(dirFsyncAttempted).toBe(true);
+
+        // Database was NOT modified
         const checkRegistry = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations';").get();
         expect(checkRegistry).toBeUndefined();
       } finally {

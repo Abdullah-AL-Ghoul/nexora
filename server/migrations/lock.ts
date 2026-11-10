@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { MigrationLockError } from './types.js';
+import { type LockReleaseResult, MigrationLockError } from './types.js';
 
 export interface LockInfo {
   token: string;
@@ -18,7 +18,7 @@ const memoryLocks = new Map<string, LockInfo>();
  * MigrationLock provides exclusive acquisition, bounded waiting, and safe release
  * for database migration execution.
  *
- * Mutual-Exclusion Governance (Step 02.1.4 - Approach 2: Conservative Fail-Closed Recovery):
+ * Mutual-Exclusion Governance (Step 02.1.5 - Lock Release Observability & Fail-Closed Safety):
  * 1. Exclusive Acquisition Primitive:
  *    - Uses exclusive file creation flag ('wx') on the filesystem.
  *    - OS kernel guarantees atomic creation across all processes (Windows CREATE_NEW, POSIX O_CREAT|O_EXCL).
@@ -31,12 +31,15 @@ const memoryLocks = new Map<string, LockInfo>();
  *    - Detailed holder information (PID, hostname, acquiredAt, dbPath) is reported in the error message.
  *    - Manual Operator Recovery Policy: If a process terminates abnormally or host crashes, the operator
  *      must verify the process is no longer running (via ps/Task Manager) and manually remove the lock file.
- * 4. Strict Token-Verified Release:
+ * 4. Strict Observable Token-Verified Release:
+ *    - release() returns an explicit LockReleaseResult (never silently swallows errors).
+ *    - Distinguishes RELEASED, ALREADY_ABSENT, NOT_HELD, OWNERSHIP_MISMATCH, and FILESYSTEM_ERROR.
  *    - release() deletes the lock file ONLY if:
  *      a) the file exists and is valid JSON,
  *      b) owner.token === this.acquisitionToken,
  *      c) owner.pid === process.pid,
  *      d) owner.hostname === os.hostname().
+ *    - On FILESYSTEM_ERROR or OWNERSHIP_MISMATCH, acquisitionToken and acquired state are PRESERVED (not wiped).
  *    - A different process, earlier acquisition instance, or foreign host cannot release the lock.
  * 5. Parity between In-Memory and File Locks:
  *    - In-memory locks use Map<string, LockInfo> enforcing the identical token-matching release contract.
@@ -82,7 +85,13 @@ export class MigrationLock {
       return;
     }
 
-    const currentOwner = this.readLockOwner();
+    let currentOwner: LockInfo | null = null;
+    try {
+      currentOwner = this.readLockOwner();
+    } catch {
+      currentOwner = null;
+    }
+
     const holderDescription = currentOwner
       ? `PID ${currentOwner.pid} on host "${currentOwner.hostname}" since ${currentOwner.acquiredAt} (token: ${currentOwner.token})`
       : 'unknown or unparseable lock file';
@@ -99,37 +108,128 @@ export class MigrationLock {
   /**
    * Release the lock if currently held by this specific acquisition instance.
    * Enforces token, PID, and hostname match.
+   * Returns an explicit, observable LockReleaseResult.
    */
-  release(): void {
-    if (!this.acquired || !this.acquisitionToken) return;
+  release(): LockReleaseResult {
+    if (!this.acquired || !this.acquisitionToken) {
+      return {
+        status: 'NOT_HELD',
+        success: true,
+        lockPath: this.lockFilePath ?? (this.isMemory ? this.lockKey : null),
+        details: 'Lock is not held by this instance',
+      };
+    }
 
     if (this.isMemory) {
       const existing = memoryLocks.get(this.lockKey);
-      if (existing && existing.token === this.acquisitionToken) {
-        memoryLocks.delete(this.lockKey);
+      if (!existing) {
+        this.acquired = false;
+        this.acquisitionToken = null;
+        return {
+          status: 'ALREADY_ABSENT',
+          success: true,
+          lockPath: this.lockKey,
+          details: 'In-memory lock entry was already absent',
+        };
       }
-    } else if (this.lockFilePath) {
-      try {
-        if (fs.existsSync(this.lockFilePath)) {
-          const owner = this.readLockOwner();
-          // Strict verification: token MUST match this instance's acquisitionToken,
-          // AND PID and hostname must match this process.
-          if (
-            owner &&
-            owner.token === this.acquisitionToken &&
-            owner.pid === process.pid &&
-            owner.hostname === os.hostname()
-          ) {
-            fs.unlinkSync(this.lockFilePath);
-          }
-        }
-      } catch {
-        // Silently ignore unlock errors during teardown
+      if (existing.token !== this.acquisitionToken) {
+        return {
+          status: 'OWNERSHIP_MISMATCH',
+          success: false,
+          lockPath: this.lockKey,
+          details: `In-memory lock token mismatch (held: ${existing.token}, instance: ${this.acquisitionToken})`,
+        };
       }
+
+      memoryLocks.delete(this.lockKey);
+      this.acquired = false;
+      this.acquisitionToken = null;
+      return {
+        status: 'RELEASED',
+        success: true,
+        lockPath: this.lockKey,
+      };
     }
 
-    this.acquired = false;
-    this.acquisitionToken = null;
+    if (!this.lockFilePath) {
+      this.acquired = false;
+      this.acquisitionToken = null;
+      return {
+        status: 'RELEASED',
+        success: true,
+        lockPath: null,
+      };
+    }
+
+    if (!fs.existsSync(this.lockFilePath)) {
+      this.acquired = false;
+      this.acquisitionToken = null;
+      return {
+        status: 'ALREADY_ABSENT',
+        success: true,
+        lockPath: this.lockFilePath,
+        details: 'Lock file was already absent on disk',
+      };
+    }
+
+    let owner: LockInfo | null = null;
+    try {
+      owner = this.readLockOwner();
+    } catch (readErr: any) {
+      // Do NOT clear acquired or acquisitionToken on filesystem read failure!
+      return {
+        status: 'FILESYSTEM_ERROR',
+        success: false,
+        lockPath: this.lockFilePath,
+        error: readErr instanceof Error ? readErr : new Error(String(readErr)),
+        details: `Failed to inspect lock file before release: ${readErr?.message}`,
+      };
+    }
+
+    if (
+      !owner ||
+      owner.token !== this.acquisitionToken ||
+      owner.pid !== process.pid ||
+      owner.hostname !== os.hostname()
+    ) {
+      // Ownership mismatch: DO NOT delete file, DO NOT clear tokens!
+      const actualHolder = owner
+        ? `PID ${owner.pid} on "${owner.hostname}" (token: ${owner.token})`
+        : 'unknown or malformed';
+      return {
+        status: 'OWNERSHIP_MISMATCH',
+        success: false,
+        lockPath: this.lockFilePath,
+        details: `Lock ownership mismatch: lock file on disk is held by ${actualHolder}, which does not match this instance's token (${this.acquisitionToken}) and PID (${process.pid}). Refusing to delete foreign lock.`,
+      };
+    }
+
+    try {
+      fs.unlinkSync(this.lockFilePath);
+      this.acquired = false;
+      this.acquisitionToken = null;
+      return {
+        status: 'RELEASED',
+        success: true,
+        lockPath: this.lockFilePath,
+      };
+    } catch (unlinkErr: any) {
+      // Do NOT clear acquired or acquisitionToken when unlink fails!
+      return {
+        status: 'FILESYSTEM_ERROR',
+        success: false,
+        lockPath: this.lockFilePath,
+        error: unlinkErr instanceof Error ? unlinkErr : new Error(String(unlinkErr)),
+        details: `Failed to unlink lock file at ${this.lockFilePath}: ${unlinkErr?.message}`,
+      };
+    }
+  }
+
+  /**
+   * Returns whether the lock is currently considered acquired by this instance.
+   */
+  isAcquired(): boolean {
+    return this.acquired;
   }
 
   /**
