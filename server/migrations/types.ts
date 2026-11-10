@@ -25,6 +25,7 @@ export interface MigrationResult {
   backupFileSynced?: boolean;
   backupDirectorySynced?: boolean;
   backupCleanupWarnings?: string[];
+  backupPruneWarnings?: string[];
   durationMs: number;
 }
 
@@ -36,6 +37,12 @@ export interface BackupResult {
   directorySynced: boolean;
   completedAt: string;
   cleanupWarnings?: string[];
+}
+
+export interface PruneResult {
+  prunedCount: number;
+  retainedCount: number;
+  warnings?: string[];
 }
 
 export type LockReleaseStatus =

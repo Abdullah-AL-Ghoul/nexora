@@ -20,7 +20,7 @@ import {
   MigrationLockError,
   MigrationRegistryError,
 } from '../migrations/types.js';
-import { createWalSafeBackup, verifyBackupIntegrity } from '../migrations/backup.js';
+import { createWalSafeBackup, verifyBackupIntegrity, pruneOldBackups } from '../migrations/backup.js';
 import { MigrationLock } from '../migrations/lock.js';
 import {
   BASELINE_DDL,
@@ -1283,6 +1283,306 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
         if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
       }
     });
+
+    it('23. Pre-unlink inspection returning FILESYSTEM_ERROR on EACCES maps to FILESYSTEM_ERROR, preserves state, and does not unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          // 1st read succeeds (initial inspection)
+          return origReadLockOwner();
+        }
+        // 2nd read (pre-unlink check) simulates permission denial (EACCES)
+        const err: any = new Error('Permission denied during pre-unlink re-read');
+        err.code = 'EACCES';
+        return {
+          status: 'FILESYSTEM_ERROR',
+          owner: null,
+          error: err,
+          details: `Filesystem error inspecting lock file (EACCES): ${err.message}`,
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('FILESYSTEM_ERROR');
+        expect(res.status).not.toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.error?.message).toContain('Permission denied');
+
+        // State preserved
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+
+        // Lock file on disk was NOT deleted
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('24. Pre-unlink inspection returning FILESYSTEM_ERROR on EIO maps to FILESYSTEM_ERROR, preserves state, and does not unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          return origReadLockOwner();
+        }
+        const err: any = new Error('Disk controller error during pre-unlink check');
+        err.code = 'EIO';
+        return {
+          status: 'FILESYSTEM_ERROR',
+          owner: null,
+          error: err,
+          details: `Filesystem error inspecting lock file (EIO): ${err.message}`,
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('FILESYSTEM_ERROR');
+        expect(res.status).not.toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+
+        // State preserved
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('25. Pre-unlink inspection confirmed absence (ENOENT) maps to ALREADY_ABSENT and clears token', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          return origReadLockOwner();
+        }
+        return {
+          status: 'ABSENT',
+          owner: null,
+          details: 'Lock file confirmed absent (ENOENT) before unlink',
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('ALREADY_ABSENT');
+        expect(res.success).toBe(true);
+
+        // State cleared
+        expect(lock.isAcquired()).toBe(false);
+        expect(lock.getAcquisitionToken()).toBeNull();
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('26. Pre-unlink inspection malformed JSON maps to OWNERSHIP_MISMATCH and preserves token', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          return origReadLockOwner();
+        }
+        return {
+          status: 'MALFORMED',
+          owner: null,
+          details: 'Lock file contains truncated JSON prior to unlink',
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('malformed');
+
+        // State preserved
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('27. Pre-unlink complete identity: same token with modified PID produces OWNERSHIP_MISMATCH and refuses unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        const initial = origReadLockOwner();
+        if (readCount === 1) return initial;
+        // Same token, but modified PID (e.g. process was replaced)
+        return {
+          status: 'VALID',
+          owner: {
+            ...initial.owner!,
+            pid: initial.owner!.pid + 9999,
+          },
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('modified or replaced prior to unlink');
+
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('28. Pre-unlink complete identity: same token with modified hostname produces OWNERSHIP_MISMATCH and refuses unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        const initial = origReadLockOwner();
+        if (readCount === 1) return initial;
+        // Same token, but modified hostname
+        return {
+          status: 'VALID',
+          owner: {
+            ...initial.owner!,
+            hostname: 'adversary-host-override',
+          },
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('modified or replaced prior to unlink');
+
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('29. Pre-unlink complete identity: same token with modified acquiredAt produces OWNERSHIP_MISMATCH and refuses unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        const initial = origReadLockOwner();
+        if (readCount === 1) return initial;
+        // Same token, but modified acquiredAt timestamp
+        return {
+          status: 'VALID',
+          owner: {
+            ...initial.owner!,
+            acquiredAt: '2026-01-01T00:00:00.000Z',
+          },
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('modified or replaced prior to unlink');
+
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('30. Pre-unlink complete identity: same token with modified dbPath produces OWNERSHIP_MISMATCH and refuses unlink', async () => {
+      const lock = new MigrationLock(dbPath);
+      await lock.acquire(1000);
+      const token = lock.getAcquisitionToken();
+      const lockFile = `${dbPath}.migration.lock`;
+
+      let readCount = 0;
+      const origReadLockOwner = lock.readLockOwner.bind(lock);
+      const spy = vi.spyOn(lock, 'readLockOwner').mockImplementation(() => {
+        readCount++;
+        const initial = origReadLockOwner();
+        if (readCount === 1) return initial;
+        // Same token, but modified dbPath
+        return {
+          status: 'VALID',
+          owner: {
+            ...initial.owner!,
+            dbPath: '/different/target/db.sqlite',
+          },
+        };
+      });
+
+      try {
+        const res = lock.release();
+        expect(res.status).toBe('OWNERSHIP_MISMATCH');
+        expect(res.success).toBe(false);
+        expect(res.details).toContain('modified or replaced prior to unlink');
+
+        expect(lock.isAcquired()).toBe(true);
+        expect(lock.getAcquisitionToken()).toBe(token);
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        spy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
   });
 
   describe('Strict Baseline Fingerprint & Structural Inspection', () => {
@@ -2074,6 +2374,231 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       } finally {
         fsyncSpy.mockRestore();
         if (fs.existsSync(sentinelPath)) fs.unlinkSync(sentinelPath);
+        db.close();
+      }
+    });
+
+    it('25. pruneOldBackups treats non-existent backup directory (ENOENT) as absent without warnings', () => {
+      const nonExistentDir = path.join(tempDir, 'does-not-exist-dir');
+      const result = pruneOldBackups(nonExistentDir, 5);
+      expect(result.prunedCount).toBe(0);
+      expect(result.retainedCount).toBe(0);
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it('26. pruneOldBackups records directory read permission failure (EACCES) in warnings without throwing', () => {
+      const backupDir = path.join(tempDir, 'backups-eacces');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const origReaddir = fs.readdirSync;
+      const readdirSpy = vi.spyOn(fs, 'readdirSync').mockImplementation(((p: any, ...args: any[]) => {
+        if (typeof p === 'string' && p === backupDir) {
+          const err: any = new Error('Permission denied scanning backup directory');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return (origReaddir as any)(p, ...args);
+      }) as any);
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        expect(result.prunedCount).toBe(0);
+        expect(result.retainedCount).toBe(0);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings!.length).toBe(1);
+        expect(result.warnings![0]).toContain('EACCES');
+        expect(result.warnings![0]).toContain(backupDir);
+      } finally {
+        readdirSpy.mockRestore();
+      }
+    });
+
+    it('27. pruneOldBackups records directory storage failure (EIO) in warnings without throwing', () => {
+      const backupDir = path.join(tempDir, 'backups-eio');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const origReaddir = fs.readdirSync;
+      const readdirSpy = vi.spyOn(fs, 'readdirSync').mockImplementation(((p: any, ...args: any[]) => {
+        if (typeof p === 'string' && p === backupDir) {
+          const err: any = new Error('Storage controller read failure');
+          err.code = 'EIO';
+          throw err;
+        }
+        return (origReaddir as any)(p, ...args);
+      }) as any);
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        expect(result.prunedCount).toBe(0);
+        expect(result.retainedCount).toBe(0);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings!.length).toBe(1);
+        expect(result.warnings![0]).toContain('EIO');
+      } finally {
+        readdirSpy.mockRestore();
+      }
+    });
+
+    it('28. pruneOldBackups records candidate stat failure (EACCES/EIO) in warnings and continues pruning valid candidates', () => {
+      const backupDir = path.join(tempDir, 'backups-stat-fail');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Create 7 backup files
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        files.push(fPath);
+      }
+
+      // One file has a stat failure
+      const problematicFile = files[2];
+      const origStat = fs.statSync;
+      const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === problematicFile) {
+          const err: any = new Error('Permission denied inspecting backup candidate');
+          err.code = 'EACCES';
+          throw err;
+        }
+        return origStat(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        // Out of 6 stat-able candidates, retainCount is 5, so 1 is pruned
+        expect(result.prunedCount).toBe(1);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings!.length).toBe(1);
+        expect(result.warnings![0]).toContain('EACCES');
+        expect(result.warnings![0]).toContain(problematicFile);
+      } finally {
+        statSpy.mockRestore();
+      }
+    });
+
+    it('29. pruneOldBackups records expired backup deletion failure (EPERM/EIO) in warnings without aborting other deletions', () => {
+      const backupDir = path.join(tempDir, 'backups-unlink-fail');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Create 7 backup files with distinct timestamps
+      const files: string[] = [];
+      for (let i = 1; i <= 7; i++) {
+        const fName = `nexora.sqlite.bak_20261110T1${i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_DATA_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      // The 2 oldest are files[0] and files[1]. Let files[0] fail on unlink.
+      const failedFile = files[0];
+      const origUnlink = fs.unlinkSync;
+      const unlinkSpy = vi.spyOn(fs, 'unlinkSync').mockImplementation((p: any) => {
+        if (typeof p === 'string' && p === failedFile) {
+          const err: any = new Error('Permission denied deleting expired backup');
+          err.code = 'EPERM';
+          throw err;
+        }
+        return origUnlink(p);
+      });
+
+      try {
+        const result = pruneOldBackups(backupDir, 5);
+        // files[1] successfully unlinked, files[0] failed -> prunedCount = 1
+        expect(result.prunedCount).toBe(1);
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings!.length).toBe(1);
+        expect(result.warnings![0]).toContain('EPERM');
+        expect(result.warnings![0]).toContain(failedFile);
+
+        // failedFile remains on disk
+        expect(fs.existsSync(failedFile)).toBe(true);
+        // files[1] was successfully deleted
+        expect(fs.existsSync(files[1])).toBe(false);
+      } finally {
+        unlinkSpy.mockRestore();
+      }
+    });
+
+    it('30. pruneOldBackups retains exactly 5 newest backups and preserves unrelated sentinel files byte-for-byte', () => {
+      const backupDir = path.join(tempDir, 'backups-retention');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const sentinelPath = path.join(backupDir, 'preserve_me.txt');
+      const SENTINEL_CONTENT = 'DO_NOT_DELETE_SENTINEL_ARCHIVE_DATA';
+      fs.writeFileSync(sentinelPath, SENTINEL_CONTENT);
+
+      // Create 8 backups with distinct mtimes
+      const files: string[] = [];
+      for (let i = 1; i <= 8; i++) {
+        const fName = `nexora.sqlite.bak_20261110T${i < 10 ? '0' + i : i}0000Z_aabbccdd00112233_pre_v2.sqlite`;
+        const fPath = path.join(backupDir, fName);
+        fs.writeFileSync(fPath, `BACKUP_VERSION_${i}`);
+        const date = new Date(2026, 10, 10, 10, i, 0);
+        fs.utimesSync(fPath, date, date);
+        files.push(fPath);
+      }
+
+      const result = pruneOldBackups(backupDir, 5);
+      expect(result.prunedCount).toBe(3);
+      expect(result.retainedCount).toBe(5);
+      expect(result.warnings).toBeUndefined();
+
+      // Sentinel must be untouched
+      expect(fs.existsSync(sentinelPath)).toBe(true);
+      expect(fs.readFileSync(sentinelPath, 'utf8')).toBe(SENTINEL_CONTENT);
+
+      // The 3 oldest (files[0], files[1], files[2]) were pruned
+      expect(fs.existsSync(files[0])).toBe(false);
+      expect(fs.existsSync(files[1])).toBe(false);
+      expect(fs.existsSync(files[2])).toBe(false);
+
+      // The 5 newest (files[3] through files[7]) were retained byte-for-byte
+      for (let i = 3; i < 8; i++) {
+        expect(fs.existsSync(files[i])).toBe(true);
+        expect(fs.readFileSync(files[i], 'utf8')).toBe(`BACKUP_VERSION_${i + 1}`);
+      }
+    });
+
+    it('31. runMigrations propagates backupPruneWarnings into MigrationResult without rolling back committed migration', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      // Simulate readdir failure when pruneOldBackups runs
+      const origReaddir = fs.readdirSync;
+      const readdirSpy = vi.spyOn(fs, 'readdirSync').mockImplementation(((p: any, ...args: any[]) => {
+        if (typeof p === 'string' && p === backupDir) {
+          const err: any = new Error('Simulated I/O failure on backup directory read during post-commit pruning');
+          err.code = 'EIO';
+          throw err;
+        }
+        return (origReaddir as any)(p, ...args);
+      }) as any);
+
+      try {
+        const result = await runMigrations(db);
+
+        // Migrations COMMITTED successfully despite pruning warning
+        expect(result.appliedCount).toBe(2);
+        expect(result.currentVersion).toBe(2);
+        expect(result.totalTables).toBe(15);
+
+        // Pruning warning is surfaced in MigrationResult
+        expect(result.backupPruneWarnings).toBeDefined();
+        expect(result.backupPruneWarnings!.length).toBeGreaterThan(0);
+        expect(result.backupPruneWarnings![0]).toContain('EIO');
+
+        // Physical database tables confirmed created
+        const checkProjects = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects';").get();
+        expect(checkProjects).toBeDefined();
+      } finally {
+        readdirSpy.mockRestore();
         db.close();
       }
     });

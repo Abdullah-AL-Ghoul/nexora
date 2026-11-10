@@ -96,7 +96,26 @@ All verification was conducted using the project's native test runner (`vitest`)
   - Verified foreign lock on disk remained 100% byte-for-byte identical.
   - Verified original lock instance preserved its acquisition token.
 
-### 3.2 Backup Cleanup Invariants & Durability
+### 3.2 Step 02.1.7 Lock Revalidation Classification & Complete Identity
+- **Test 23 (`Pre-unlink inspection returning FILESYSTEM_ERROR on EACCES maps to FILESYSTEM_ERROR, preserves state, and does not unlink`):**
+  - Verified that access denial (`EACCES`) on pre-unlink inspection strictly yields `FILESYSTEM_ERROR`, never `OWNERSHIP_MISMATCH`.
+  - Verified tokens and acquired state are preserved and lock file is untouched.
+- **Test 24 (`Pre-unlink inspection returning FILESYSTEM_ERROR on EIO maps to FILESYSTEM_ERROR, preserves state, and does not unlink`):**
+  - Verified that storage I/O errors (`EIO`) on pre-unlink inspection strictly yield `FILESYSTEM_ERROR`, preserving state and refusing unlink.
+- **Test 25 (`Pre-unlink inspection confirmed absence (ENOENT) maps to ALREADY_ABSENT and clears token`):**
+  - Verified confirmed absence (`ENOENT`) prior to unlink maps to `ALREADY_ABSENT`, clearing acquired state and tokens.
+- **Test 26 (`Pre-unlink inspection malformed JSON maps to OWNERSHIP_MISMATCH and preserves token`):**
+  - Verified corrupted lock file prior to unlink maps to `OWNERSHIP_MISMATCH`, preserving tokens and refusing deletion.
+- **Test 27 (`Pre-unlink complete identity: same token with modified PID produces OWNERSHIP_MISMATCH and refuses unlink`):**
+  - Verified modified PID with identical token is rejected as `OWNERSHIP_MISMATCH`.
+- **Test 28 (`Pre-unlink complete identity: same token with modified hostname produces OWNERSHIP_MISMATCH and refuses unlink`):**
+  - Verified modified hostname with identical token is rejected as `OWNERSHIP_MISMATCH`.
+- **Test 29 (`Pre-unlink complete identity: same token with modified acquiredAt produces OWNERSHIP_MISMATCH and refuses unlink`):**
+  - Verified modified timestamp with identical token is rejected as `OWNERSHIP_MISMATCH`.
+- **Test 30 (`Pre-unlink complete identity: same token with modified dbPath produces OWNERSHIP_MISMATCH and refuses unlink`):**
+  - Verified modified target dbPath with identical token is rejected as `OWNERSHIP_MISMATCH`.
+
+### 3.3 Backup Cleanup Invariants & Durability
 - **Test 21 (`Backup cleanup treats ENOENT as already absent without generating cleanup warnings`):**
   - Verified clean backup execution without spurious cleanup warnings.
 - **Test 22 (`EACCES during staging cleanup produces observable cleanup warning in BackupResult`):**
@@ -108,17 +127,35 @@ All verification was conducted using the project's native test runner (`vitest`)
 - **Test 24 (`Pre-existing collision sentinels remain byte-for-byte unchanged across cleanup`):**
   - Verified pre-existing sentinel files in `backups/` directory are never touched or modified during backup failure cleanup.
 
+### 3.4 Step 02.1.7 Backup Pruning Observability
+- **Test 25 (`pruneOldBackups treats non-existent backup directory (ENOENT) as absent without warnings`):**
+  - Verified `pruneOldBackups` on absent directory returns `{ prunedCount: 0, retainedCount: 0 }` with no warnings.
+- **Test 26 (`pruneOldBackups records directory read permission failure (EACCES) in warnings without throwing`):**
+  - Verified `EACCES` on `readdirSync` is recorded in warnings with affected path.
+- **Test 27 (`pruneOldBackups records directory storage failure (EIO) in warnings without throwing`):**
+  - Verified `EIO` on `readdirSync` is recorded in warnings without throwing.
+- **Test 28 (`pruneOldBackups records candidate stat failure (EACCES/EIO) in warnings and continues pruning valid candidates`):**
+  - Verified candidate stat failure is captured in warnings while remaining valid backups are pruned.
+- **Test 29 (`pruneOldBackups records expired backup deletion failure (EPERM/EIO) in warnings without aborting other deletions`):**
+  - Verified deletion failure is recorded in warnings while other expired backups are pruned.
+- **Test 30 (`pruneOldBackups retains exactly 5 newest backups and preserves unrelated sentinel files byte-for-byte`):**
+  - Verified exactly 5 newest backups are kept; older files pruned; unrelated sentinels preserved byte-for-byte.
+- **Test 31 (`runMigrations propagates backupPruneWarnings into MigrationResult without rolling back committed migration`):**
+  - Verified post-commit pruning warnings are surfaced in `MigrationResult.backupPruneWarnings` without rolling back or failing the committed migration.
+
 ---
 
 ## 4. Modified Source Code Inventory
 
 | File | Nature of Changes |
 | :--- | :--- |
-| `server/migrations/lock.ts` | Refactored `readLockOwner()` returning `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); eliminated `existsSync` from release path; implemented pre-unlink re-verification; documented threat-model and operational constraints. |
-| `server/migrations/backup.ts` | Eliminated `existsSync` from cleanup paths; direct `unlinkSync`/`rmdirSync` treating `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim. |
-| `server/__tests__/migrations.test.ts` | Added 8 new regression tests (Tests 19-22 under Lock Lifecycle, Tests 21-24 under WAL-Safe Backup) covering all Step 02.1.6 contracts. |
-| `docs/phase02-step-02.1.5-closure-report.md` | Updated closure report with Step 02.1.6 remediation details, test counts, and evidence. |
-| `docs/phase02-implementation-report.md` | Updated Phase 02 implementation report with Step 02.1.6 defect resolutions and test evidence. |
+| `server/migrations/lock.ts` | Refactored `readLockOwner()` returning `LockOwnerInspection` (`VALID`, `ABSENT`, `MALFORMED`, `FILESYSTEM_ERROR`); eliminated `existsSync` from release path; implemented strict pre-unlink classification (`ABSENT` -> `ALREADY_ABSENT`, `FILESYSTEM_ERROR` -> `FILESYSTEM_ERROR`, `MALFORMED` -> `OWNERSHIP_MISMATCH`); enforced 5-tuple ownership identity verification (`token`, `pid`, `hostname`, `acquiredAt`, `dbPath`); documented threat-model and operational constraints. |
+| `server/migrations/backup.ts` | Refactored `pruneOldBackups` to return `PruneResult` (`{ prunedCount, retainedCount, warnings? }`); treats confirmed `ENOENT` as absent; records filesystem errors during readdir, stat, and unlink with affected path and error code; eliminated `existsSync` from cleanup paths; direct `unlinkSync`/`rmdirSync` treating `ENOENT` as absent; records `EACCES`/`EIO` in warnings/failures; retains ownership metadata on unconfirmed cleanup; removed obsolete `copyFileSync` fallback claim. |
+| `server/migrations/runner.ts` | Integrated post-commit pruning observability; captured `pruneOldBackups` warnings into `MigrationResult.backupPruneWarnings` without rolling back or failing committed migrations. |
+| `server/migrations/types.ts` | Added `PruneResult` interface; added `backupPruneWarnings?: string[]` to `MigrationResult`. |
+| `server/__tests__/migrations.test.ts` | Added 15 new regression tests (Tests 23-30 under Lock Lifecycle, Tests 25-31 under Backup Durability & Pruning) covering all Step 02.1.7 contracts (total: 91 migration tests, 159 project tests). |
+| `docs/phase02-step-02.1.5-closure-report.md` | Updated closure report with Step 02.1.7 remediation details, test counts, and evidence. |
+| `docs/phase02-implementation-report.md` | Updated Phase 02 implementation report with Step 02.1.7 defect resolutions and test evidence. |
 
 ---
 
@@ -126,8 +163,8 @@ All verification was conducted using the project's native test runner (`vitest`)
 
 ```text
 VERDICT: PASS
-EVIDENCE: npm test passed (4 test files, 144 tests passed, 0 failures); tsc --noEmit passed (0 errors); vite build passed (1711 modules, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
-CHANGES: server/migrations/lock.ts, server/migrations/backup.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
+EVIDENCE: npm test passed (4 test files, 159 tests passed, 0 failures); tsc --noEmit passed (0 errors); vite build passed (1711 modules, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
+CHANGES: server/migrations/lock.ts, server/migrations/backup.ts, server/migrations/runner.ts, server/migrations/types.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
 UNVERIFIED: Persistent database production rollout (intentionally prohibited until explicitly authorized in Step 02.2).
-ROLLBACK: git checkout be42002a9addb1e9223c54955cf50eaad71e9143
+ROLLBACK: git checkout 97c37fcea36a49ba8c53f36124ef3bbc9d0d1253
 ```

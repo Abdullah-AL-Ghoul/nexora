@@ -2,9 +2,9 @@ import { DatabaseSync, backup } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { type BackupResult, MigrationBackupError } from './types.js';
+import { type BackupResult, type PruneResult, MigrationBackupError } from './types.js';
 
-export type { BackupResult };
+export type { BackupResult, PruneResult };
 
 /**
  * Creates a transactionally consistent, WAL-safe online backup of a file-backed SQLite database
@@ -443,38 +443,78 @@ export function verifyBackupIntegrity(backupPath: string, sourceDb?: DatabaseSyn
 }
 
 /**
- * Prunes backups older than the 5 most recent files in the backup directory.
+ * Prunes backups older than the retainCount most recent files in the backup directory.
+ * Returns PruneResult containing count of pruned and retained backups, plus any non-fatal filesystem warnings.
+ *
+ * Operational Observability Contract (Step 02.1.7):
+ * - Confirmed ENOENT on the backup directory or candidates is treated as absent (not a failure).
+ * - Filesystem errors during readdir, stat, or unlink are recorded with the affected path and error code.
+ * - Filesystem warnings are returned to the caller so they can be surfaced in MigrationResult without
+ *   failing committed migrations.
  */
-export function pruneOldBackups(backupDir: string, retainCount = 5): void {
+export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult {
+  const warnings: string[] = [];
+  let dirEntries: string[];
+
   try {
-    let dirEntries: string[];
-    try {
-      dirEntries = fs.readdirSync(backupDir);
-    } catch (readDirErr: any) {
-      if (readDirErr?.code === 'ENOENT') return;
-      throw readDirErr;
+    dirEntries = fs.readdirSync(backupDir);
+  } catch (readDirErr: any) {
+    if (readDirErr?.code === 'ENOENT') {
+      return { prunedCount: 0, retainedCount: 0 };
     }
+    return {
+      prunedCount: 0,
+      retainedCount: 0,
+      warnings: [
+        `Failed to inspect backup directory for pruning at "${backupDir}" (${readDirErr?.code ?? 'UNKNOWN'}): ${readDirErr?.message ?? String(readDirErr)}`,
+      ],
+    };
+  }
 
-    const files = dirEntries
-      .filter((f) => f.startsWith('nexora.sqlite.bak_') && f.endsWith('.sqlite'))
-      .map((f) => {
-        const fullPath = path.join(backupDir, f);
-        return { path: fullPath, mtime: fs.statSync(fullPath).mtimeMs };
-      })
-      .sort((a, b) => b.mtime - a.mtime); // Newest first
-
-    if (files.length > retainCount) {
-      const toDelete = files.slice(retainCount);
-      for (const item of toDelete) {
-        try {
-          fs.unlinkSync(item.path);
-        } catch {
-          // Ignore deletion error for individual backup
+  const validEntries: { path: string; mtime: number }[] = [];
+  for (const f of dirEntries) {
+    if (f.startsWith('nexora.sqlite.bak_') && f.endsWith('.sqlite')) {
+      const fullPath = path.join(backupDir, f);
+      try {
+        const stat = fs.statSync(fullPath);
+        validEntries.push({ path: fullPath, mtime: stat.mtimeMs });
+      } catch (statErr: any) {
+        if (statErr?.code === 'ENOENT') {
+          continue;
         }
+        warnings.push(
+          `Failed to stat backup candidate "${fullPath}" (${statErr?.code ?? 'UNKNOWN'}): ${statErr?.message ?? String(statErr)}`
+        );
       }
     }
-  } catch {
-    // Ignore pruning errors
   }
+
+  // Sort newest first
+  validEntries.sort((a, b) => b.mtime - a.mtime);
+
+  let prunedCount = 0;
+  if (validEntries.length > retainCount) {
+    const toDelete = validEntries.slice(retainCount);
+    for (const item of toDelete) {
+      try {
+        fs.unlinkSync(item.path);
+        prunedCount++;
+      } catch (unlinkErr: any) {
+        if (unlinkErr?.code === 'ENOENT') {
+          continue;
+        }
+        warnings.push(
+          `Failed to delete expired backup "${item.path}" (${unlinkErr?.code ?? 'UNKNOWN'}): ${unlinkErr?.message ?? String(unlinkErr)}`
+        );
+      }
+    }
+  }
+
+  const retainedCount = validEntries.length - prunedCount;
+  return {
+    prunedCount,
+    retainedCount,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
 }
 

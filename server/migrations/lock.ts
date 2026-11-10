@@ -51,19 +51,23 @@ const memoryLocks = new Map<string, LockInfo>();
  *    - release() returns an explicit LockReleaseResult (never silently swallows errors).
  *    - Distinguishes RELEASED, ALREADY_ABSENT, NOT_HELD, OWNERSHIP_MISMATCH, and FILESYSTEM_ERROR.
  *    - release() deletes the lock file ONLY if:
- *      a) readLockOwner() confirms VALID metadata,
- *      b) owner.token === this.acquisitionToken,
- *      c) owner.pid === process.pid,
- *      d) owner.hostname === os.hostname(),
- *      e) pre-unlink re-verification confirms lock has not been replaced on disk prior to unlinkSync.
+ *      a) initial readLockOwner() confirms VALID metadata,
+ *      b) initial owner matches this instance (token, PID, hostname),
+ *      c) pre-unlink re-verification confirms VALID metadata and identical 5-tuple ownership identity
+ *         (token, pid, hostname, acquiredAt, dbPath).
+ *    - On pre-unlink re-verification:
+ *      * ABSENT is mapped to ALREADY_ABSENT (state cleared, success: true).
+ *      * FILESYSTEM_ERROR (e.g. EACCES, EPERM, EIO) is mapped strictly to FILESYSTEM_ERROR (state preserved, success: false).
+ *      * MALFORMED is mapped to OWNERSHIP_MISMATCH (state preserved, success: false, refuses to delete).
+ *      * VALID with any identity discrepancy is mapped to OWNERSHIP_MISMATCH (state preserved, success: false).
  *    - On FILESYSTEM_ERROR or OWNERSHIP_MISMATCH, acquisitionToken and acquired state are PRESERVED (not wiped).
  *    - A different process, earlier acquisition instance, foreign host, or malformed lock file cannot cause release.
- * 5. Ownership Replacement Race & Threat-Model Limitations (Step 02.1.6):
+ * 5. Ownership Replacement Race & Threat-Model Limitations (Step 02.1.7):
  *    - User-space filesystem limitation: Standard Node.js library and underlying OS kernels (Win32, POSIX)
  *      do not provide a portable atomic "compare-and-unlink" system call.
  *    - Defensive Mitigation: MigrationLock implements pre-unlink verification immediately before calling
  *      unlinkSync. If an adversarial process replaces the lock file between initial inspection and pre-unlink
- *      check, the runner detects the token mismatch and refuses to delete the foreign lock.
+ *      check, the runner detects the token or identity mismatch and refuses to delete the foreign lock.
  *    - Residual Window: In theory, if a file were replaced in the irreducible sub-microsecond window strictly
  *      between the pre-unlink check and the OS kernel executing unlinkSync(), a path-based unlink would delete
  *      the newly placed file.
@@ -251,11 +255,52 @@ export class MigrationLock {
 
     // Pre-unlink ownership re-verification (guards against ownership replacement race):
     const preUnlink = this.readLockOwner();
-    if (preUnlink.status !== 'VALID' || preUnlink.owner?.token !== this.acquisitionToken) {
-      const replacedHolder =
-        preUnlink.status === 'VALID'
-          ? `PID ${preUnlink.owner?.pid} on "${preUnlink.owner?.hostname}" (token: ${preUnlink.owner?.token})`
-          : preUnlink.details || preUnlink.status;
+
+    if (preUnlink.status === 'ABSENT') {
+      // Confirmed absent on disk prior to unlink (ENOENT)
+      this.acquired = false;
+      this.acquisitionToken = null;
+      return {
+        status: 'ALREADY_ABSENT',
+        success: true,
+        lockPath: this.lockFilePath,
+        details: preUnlink.details || 'Lock file was confirmed absent on disk prior to unlink (ENOENT)',
+      };
+    }
+
+    if (preUnlink.status === 'FILESYSTEM_ERROR') {
+      // Access denial, I/O error, or other filesystem failure inspecting lock file prior to unlink:
+      // Do NOT classify as OWNERSHIP_MISMATCH! Preserve acquisition state and refuse to unlink.
+      return {
+        status: 'FILESYSTEM_ERROR',
+        success: false,
+        lockPath: this.lockFilePath,
+        error: preUnlink.error,
+        details: `Failed to inspect lock file prior to unlink: ${preUnlink.details}`,
+      };
+    }
+
+    if (preUnlink.status === 'MALFORMED') {
+      // Malformed lock file prior to unlink: refuse to unlink and preserve acquisition state
+      return {
+        status: 'OWNERSHIP_MISMATCH',
+        success: false,
+        lockPath: this.lockFilePath,
+        details: `Lock file metadata is malformed prior to unlink (${preUnlink.details}). Refusing to delete unverified lock file.`,
+      };
+    }
+
+    // preUnlink.status === 'VALID': verify COMPLETE ownership identity
+    const preOwner = preUnlink.owner!;
+    const identityMatches =
+      preOwner.token === owner.token &&
+      preOwner.pid === owner.pid &&
+      preOwner.hostname === owner.hostname &&
+      preOwner.acquiredAt === owner.acquiredAt &&
+      preOwner.dbPath === owner.dbPath;
+
+    if (!identityMatches) {
+      const replacedHolder = `PID ${preOwner.pid} on "${preOwner.hostname}" (token: ${preOwner.token}, acquiredAt: ${preOwner.acquiredAt}, dbPath: ${preOwner.dbPath})`;
       return {
         status: 'OWNERSHIP_MISMATCH',
         success: false,

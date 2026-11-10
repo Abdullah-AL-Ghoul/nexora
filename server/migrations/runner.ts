@@ -353,9 +353,13 @@ export async function runMigrations(
     }
 
     // After all pending migrations commit successfully, prune older backups
+    let backupPruneWarnings: string[] | undefined;
     if (backupPath) {
       const backupDir = path.dirname(backupPath);
-      pruneOldBackups(backupDir, 5);
+      const pruneRes = pruneOldBackups(backupDir, 5);
+      if (pruneRes.warnings && pruneRes.warnings.length > 0) {
+        backupPruneWarnings = pruneRes.warnings;
+      }
     }
 
     const totalTables = getPhysicalTableCount(db);
@@ -372,6 +376,7 @@ export async function runMigrations(
       backupFileSynced,
       backupDirectorySynced,
       ...(backupCleanupWarnings ? { backupCleanupWarnings } : {}),
+      ...(backupPruneWarnings ? { backupPruneWarnings } : {}),
       durationMs: Date.now() - startTime,
     };
 
