@@ -1,41 +1,48 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MigrationBackupError } from './types.js';
+import { type BackupResult, MigrationBackupError } from './types.js';
 
-export interface BackupResult {
-  backupPath: string;
-  bytes: number;
-  pagesCopied: number;
-  completedAt: string;
-}
+export type { BackupResult };
 
 /**
  * Creates a transactionally consistent, WAL-safe online backup of a file-backed SQLite database
  * using Node.js 24's native `backup()` API.
  *
+ * Fail-Closed Contract:
+ * - In-memory databases throw MigrationBackupError if passed here (caller must handle memory exception).
+ * - If the source file does not exist on disk, throws MigrationBackupError (no silent bypass).
+ * - Requires positive page count returned by backup(), positive byte size, and full SQLite integrity.
+ * - Reopens backup to verify table schema and row count parity against source database.
+ * - Flushes file to durable storage via fsync (using r+ access).
+ * - Attempts directory sync on supported POSIX filesystems.
+ * - Removes partial or failed backup artifacts on error so no corrupted files linger.
+ *
  * @param db Active DatabaseSync instance
  * @param dbLocation Filesystem location of the database file
  * @param targetVersion The pending migration version being prepared
- * @returns BackupResult containing the verified backup path, file size, and copied page count
+ * @returns BackupResult containing verified path, size, page count, and sync state
  */
 export async function createWalSafeBackup(
   db: DatabaseSync,
   dbLocation: string,
   targetVersion: number
-): Promise<BackupResult | null> {
-  // In-memory databases do not require filesystem backups
+): Promise<BackupResult> {
+  // In-memory databases do not support filesystem backups
   if (dbLocation === ':memory:' || dbLocation.startsWith(':memory:')) {
-    return null;
+    throw new MigrationBackupError('Cannot create filesystem backup for an in-memory database');
   }
 
-  // If the source DB file doesn't exist on disk yet (fresh install), nothing to backup
+  // Fail closed: source database file must exist on disk before backup
   if (!fs.existsSync(dbLocation)) {
-    return null;
+    throw new MigrationBackupError(
+      `Source database file does not exist on disk: "${dbLocation}". Cannot perform mandatory migration backup.`
+    );
   }
 
   const dbDir = path.dirname(dbLocation);
   const backupDir = path.join(dbDir, 'backups');
+  let backupPath: string | undefined;
 
   try {
     if (!fs.existsSync(backupDir)) {
@@ -47,7 +54,7 @@ export async function createWalSafeBackup(
     const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z');
     const salt = Math.random().toString(36).substring(2, 6);
     const filename = `nexora.sqlite.bak_${timestamp}_${salt}_pre_v${targetVersion}.sqlite`;
-    const backupPath = path.join(backupDir, filename);
+    backupPath = path.join(backupDir, filename);
 
     if (fs.existsSync(backupPath)) {
       throw new MigrationBackupError(`Backup destination already exists: ${backupPath}`);
@@ -73,25 +80,52 @@ export async function createWalSafeBackup(
     // Verify database integrity on the backup file and record parity with source
     verifyBackupIntegrity(backupPath, db);
 
-    // Durability synchronization where supported
+    // Durability synchronization on backup file
+    let fileSynced = false;
     try {
-      const fd = fs.openSync(backupPath, 'r');
+      const fd = fs.openSync(backupPath, 'r+');
       try {
         fs.fsyncSync(fd);
+        fileSynced = true;
       } finally {
         fs.closeSync(fd);
       }
     } catch {
-      // Documented limitation: fsync on read file descriptor is OS/filesystem dependent
+      fileSynced = false;
+    }
+
+    // Directory synchronization where supported by OS/filesystem (POSIX)
+    let directorySynced = false;
+    try {
+      const dirFd = fs.openSync(backupDir, 'r');
+      try {
+        fs.fsyncSync(dirFd);
+        directorySynced = true;
+      } finally {
+        fs.closeSync(dirFd);
+      }
+    } catch {
+      // Documented limitation: directory fsync is unsupported on Windows (Win32) and throws EPERM/EISDIR
+      directorySynced = false;
     }
 
     return {
       backupPath,
       bytes: stat.size,
       pagesCopied,
+      fileSynced,
+      directorySynced,
       completedAt: new Date().toISOString(),
     };
   } catch (err: any) {
+    // Clean up partial/broken backup file so no corrupted artifacts linger
+    if (backupPath && fs.existsSync(backupPath)) {
+      try {
+        fs.unlinkSync(backupPath);
+      } catch {
+        // Ignore cleanup failure
+      }
+    }
     if (err instanceof MigrationBackupError) throw err;
     throw new MigrationBackupError(`WAL backup creation failed for ${dbLocation}: ${err?.message}`, err);
   }

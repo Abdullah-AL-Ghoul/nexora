@@ -25,10 +25,18 @@ export interface MigrationResult {
   durationMs: number;
 }
 
+export interface BackupResult {
+  backupPath: string;
+  bytes: number;
+  pagesCopied: number;
+  fileSynced: boolean;
+  directorySynced: boolean;
+  completedAt: string;
+}
+
 export interface MigrationRunnerOptions {
-  backup?: boolean;
-  lock?: boolean;
-  skipIntegrityCheck?: boolean;
+  /** Optional maximum time to wait for migration lock acquisition in milliseconds (default 5000ms) */
+  lockTimeoutMs?: number;
 }
 
 // ─── Custom Typed Errors ───────────────────────────────────────────────────────

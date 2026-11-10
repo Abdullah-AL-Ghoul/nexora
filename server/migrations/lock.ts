@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { MigrationLockError } from './types.js';
 
 export interface LockInfo {
@@ -20,10 +21,15 @@ const memoryLocks = new Set<string>();
  * 1. Lock acquisition uses exclusive file creation ('wx').
  * 2. Locks are NEVER removed solely because of age.
  * 3. Active processes on the same host are never considered stale.
- * 4. Stale removal is permitted ONLY for confirmed dead PIDs on the same host (ESRCH),
- *    with pre-deletion content verification to prevent race conditions.
- * 5. Foreign host locks, uncertain ownership, or malformed lock data fail closed.
- * 6. Release is verified to ensure only the owning process can delete the lock file.
+ * 4. Stale removal is permitted ONLY for confirmed dead PIDs on the same host (ESRCH).
+ * 5. Race-Safe Atomic Reclamation:
+ *    - To eliminate TOCTOU race conditions where an unlink might destroy a newly placed active lock,
+ *      the runner atomically renames the stale lock file to an isolated candidate path.
+ *    - Only the winning process renames the file; all other concurrent reclaimers receive ENOENT.
+ *    - The reclaimed file's content is re-verified; if it matches the dead PID, it is unlinked.
+ *    - If content mismatch is detected (a new lock was created prior to rename), it is immediately restored.
+ * 6. Foreign host locks, uncertain ownership, or malformed lock data fail closed.
+ * 7. Release is verified to ensure only the owning process can delete the lock file.
  */
 export class MigrationLock {
   private readonly lockFilePath: string | null;
@@ -136,9 +142,13 @@ export class MigrationLock {
 
   /**
    * Handles an existing lock file.
-   * Stale removal is ONLY permitted if the process is confirmed dead on the SAME host (ESRCH),
-   * and the lock content has not changed since inspection.
-   * If foreign host, uncertain ownership, malformed data, or process is alive, fails closed (no deletion).
+   * Stale removal is ONLY permitted if the process is confirmed dead on the SAME host (ESRCH).
+   *
+   * Race-Safe Reclamation Protocol:
+   * To prevent a TOCTOU race where an unlinkSync might destroy a brand new active lock created by
+   * another process, we atomically rename the dead lock file to an isolated reclaim path.
+   * Only the winner claims the file; if content matches the inspected dead lock, it is unlinked.
+   * If a new lock was captured, it is restored back.
    */
   private handleExistingLockFile(): void {
     if (!this.lockFilePath || !fs.existsSync(this.lockFilePath)) {
@@ -198,14 +208,43 @@ export class MigrationLock {
     }
 
     // Owning process is confirmed dead (ESRCH) on this host.
-    // Verify lock file has not changed since inspection before unlinking.
+    // Execute race-safe atomic reclamation:
+    const salt = crypto.randomBytes(4).toString('hex');
+    const reclaimPath = `${this.lockFilePath}.reclaim_${process.pid}_${Date.now()}_${salt}`;
+
     try {
-      const currentContent = fs.readFileSync(this.lockFilePath, 'utf8');
-      if (currentContent === rawContent) {
-        fs.unlinkSync(this.lockFilePath);
+      fs.renameSync(this.lockFilePath, reclaimPath);
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        // Another concurrent process already claimed or removed the dead lock file safely
+        return;
       }
+      // Any other filesystem error -> fail closed
+      return;
+    }
+
+    let reclaimedContent: string;
+    try {
+      reclaimedContent = fs.readFileSync(reclaimPath, 'utf8');
     } catch {
-      // Ignore if unlinked by another connection
+      return;
+    }
+
+    if (reclaimedContent === rawContent) {
+      // Confirmed: we exclusively and atomically claimed the dead lock. Unlink the isolated candidate.
+      try {
+        fs.unlinkSync(reclaimPath);
+      } catch {
+        // Ignore unlink error on isolated candidate
+      }
+    } else {
+      // TOCTOU Avoidance: A new lock replaced the dead lock right before the rename!
+      // Restore the new lock back to lockFilePath so the active lock is preserved.
+      try {
+        fs.renameSync(reclaimPath, this.lockFilePath);
+      } catch {
+        // Ignore if destination was already recreated
+      }
     }
   }
 

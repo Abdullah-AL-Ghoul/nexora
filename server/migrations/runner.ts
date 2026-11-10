@@ -221,12 +221,9 @@ export async function runMigrations(
   const dbLocation = getDbLocation(db);
   const isMemory = dbLocation === ':memory:' || dbLocation.startsWith(':memory:');
 
-  // Concurrency protection: acquire exclusive migration lock BEFORE checking pending migrations
-  const shouldLock = options.lock !== false;
-  const lock = shouldLock ? new MigrationLock(dbLocation) : null;
-  if (lock) {
-    await lock.acquire(5000);
-  }
+  // Concurrency protection: acquire exclusive migration lock unconditionally
+  const lock = new MigrationLock(dbLocation);
+  await lock.acquire(options.lockTimeoutMs ?? 5000);
 
   let backupPath: string | undefined;
 
@@ -253,16 +250,29 @@ export async function runMigrations(
       };
     }
 
-    // Backup ordering enforcement:
+    // Fail-Closed Backup Contract:
     // If a persistent file-backed database already contains tables (legacy application state or previous migrations),
     // a verified WAL-safe backup MUST precede any DDL, DML, or registry creation.
+    // Bypassing backup or proceeding on null/invalid result is strictly forbidden.
     const existingTableCount = getPhysicalTableCount(db);
-    const shouldBackup = options.backup !== false && !isMemory;
 
-    if (shouldBackup && existingTableCount > 0) {
-      const backupResult = await createWalSafeBackup(db, dbLocation, pending[0].version);
-      if (backupResult) {
+    if (!isMemory) {
+      if (existingTableCount > 0) {
+        const backupResult = await createWalSafeBackup(db, dbLocation, pending[0].version);
+        if (
+          !backupResult ||
+          typeof backupResult.backupPath !== 'string' ||
+          backupResult.backupPath.length === 0 ||
+          typeof backupResult.pagesCopied !== 'number' ||
+          backupResult.pagesCopied <= 0
+        ) {
+          throw new MigrationBackupError(
+            `Mandatory backup failed to produce a valid BackupResult for file database: ${dbLocation}`
+          );
+        }
         backupPath = backupResult.backupPath;
+      } else {
+        // Documented exception: Fresh, empty database (0 application tables) has no existing state to preserve.
       }
     }
 

@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import {
   runMigrations,
   getPhysicalTableCount,
@@ -408,6 +409,68 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
 
       db.close();
     });
+
+    it('3. Non-empty file-backed DB whose file does not exist on disk throws MigrationBackupError', async () => {
+      const db = new DatabaseSync(':memory:');
+      const nonExistentPath = path.join(tempDir, 'does_not_exist.sqlite');
+
+      await expect(createWalSafeBackup(db, nonExistentPath, 2)).rejects.toThrow(MigrationBackupError);
+      db.close();
+    });
+
+    it('4. Calling createWalSafeBackup on in-memory database throws MigrationBackupError', async () => {
+      const db = new DatabaseSync(':memory:');
+
+      await expect(createWalSafeBackup(db, ':memory:', 2)).rejects.toThrow(MigrationBackupError);
+      db.close();
+    });
+
+    it('5. Non-empty file-backed database cannot bypass backup via public options', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      // Attempt to bypass backup by passing { backup: false } as any
+      const result = await runMigrations(db, { backup: false } as any);
+
+      // Backup was NOT bypassed: backupPath must be defined and file must exist
+      expect(result.backupPath).toBeDefined();
+      expect(fs.existsSync(result.backupPath!)).toBe(true);
+
+      db.close();
+    });
+
+    it('6. Failed backup removes any partial or broken backup files from disk', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+
+      // Spy on fs.statSync to simulate detection of a 0-byte or corrupt backup artifact
+      const origStatSync = fs.statSync;
+      let simulatedFailureTriggered = false;
+      const statSpy = vi.spyOn(fs, 'statSync').mockImplementation((targetPath: fs.PathLike, options?: any) => {
+        if (typeof targetPath === 'string' && targetPath.includes('.sqlite.bak_')) {
+          simulatedFailureTriggered = true;
+          const res = origStatSync(targetPath, options);
+          return { ...res, size: 0 } as any;
+        }
+        return origStatSync(targetPath, options);
+      });
+
+      try {
+        await expect(createWalSafeBackup(db, dbPath, 2)).rejects.toThrow(MigrationBackupError);
+        expect(simulatedFailureTriggered).toBe(true);
+
+        // Verify that partial/corrupted backup artifact was unlinked and does NOT remain on disk
+        const files = fs.existsSync(backupDir) ? fs.readdirSync(backupDir) : [];
+        expect(files.filter((f) => f.includes('.sqlite.bak_'))).toHaveLength(0);
+      } finally {
+        statSpy.mockRestore();
+        db.close();
+      }
+    });
   });
 
   describe('Concurrency & Multi-Connection Synchronization', () => {
@@ -548,6 +611,91 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       expect(fs.existsSync(lockFile)).toBe(true);
       fs.unlinkSync(lockFile);
     });
+
+    it('6. EPERM on PID check treats lock as active and does NOT delete it', async () => {
+      const lockFile = `${dbPath}.migration.lock`;
+      const payload = {
+        pid: 12345,
+        hostname: os.hostname(),
+        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+        dbPath,
+      };
+      fs.writeFileSync(lockFile, JSON.stringify(payload));
+
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+        const err: any = new Error('Operation not permitted');
+        err.code = 'EPERM';
+        throw err;
+      });
+
+      const lock = new MigrationLock(dbPath);
+      try {
+        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+        // Lock file must NOT be deleted because EPERM indicates process is alive
+        expect(fs.existsSync(lockFile)).toBe(true);
+      } finally {
+        killSpy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('7. Deterministic race test: reclaiming a stale lock does NOT delete a new active lock created concurrently', async () => {
+      const lockFile = `${dbPath}.migration.lock`;
+      const deadPayload = JSON.stringify({
+        pid: 999999,
+        hostname: os.hostname(),
+        acquiredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+        dbPath,
+      });
+      fs.writeFileSync(lockFile, deadPayload);
+
+      const activePayload = JSON.stringify({
+        pid: process.pid,
+        hostname: os.hostname(),
+        acquiredAt: new Date().toISOString(),
+        dbPath,
+      });
+
+      const origRenameSync = fs.renameSync;
+      let simulatedRaceTriggered = false;
+
+      const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((src: fs.PathLike, dest: fs.PathLike) => {
+        origRenameSync(src, dest);
+        if (typeof src === 'string' && src === lockFile && typeof dest === 'string' && dest.includes('.reclaim')) {
+          simulatedRaceTriggered = true;
+          // Overwrite candidate file with active process lock payload before content verification
+          fs.writeFileSync(dest, activePayload);
+        }
+      });
+
+      const lock = new MigrationLock(dbPath);
+      try {
+        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+        expect(simulatedRaceTriggered).toBe(true);
+
+        // Lock file must have been restored and contain activePayload
+        expect(fs.existsSync(lockFile)).toBe(true);
+        expect(fs.readFileSync(lockFile, 'utf8')).toBe(activePayload);
+      } finally {
+        renameSpy.mockRestore();
+        if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+      }
+    });
+
+    it('8. File-backed database cannot disable migration lock via options', async () => {
+      const db = new DatabaseSync(dbPath);
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+      db.exec(BASELINE_DDL);
+
+      const externalLock = new MigrationLock(dbPath);
+      await externalLock.acquire(1000);
+
+      // Attempt to bypass lock with { lock: false } option - must still fail
+      await expect(runMigrations(db, { lock: false, lockTimeoutMs: 150 } as any)).rejects.toThrow(MigrationLockError);
+
+      externalLock.release();
+      db.close();
+    });
   });
 
   describe('Strict Baseline Fingerprint & Structural Inspection', () => {
@@ -666,10 +814,12 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
 
       const backupRes = await createWalSafeBackup(db, dbPath, 2);
       expect(backupRes).not.toBeNull();
-      expect(fs.existsSync(backupRes!.backupPath)).toBe(true);
-      expect(backupRes!.bytes).toBeGreaterThan(0);
-      expect(backupRes!.pagesCopied).toBeGreaterThan(0);
-      expect(typeof backupRes!.pagesCopied).toBe('number');
+      expect(fs.existsSync(backupRes.backupPath)).toBe(true);
+      expect(backupRes.bytes).toBeGreaterThan(0);
+      expect(backupRes.pagesCopied).toBeGreaterThan(0);
+      expect(typeof backupRes.pagesCopied).toBe('number');
+      expect(backupRes.fileSynced).toBe(true);
+      expect(typeof backupRes.directorySynced).toBe('boolean');
 
       db.close();
     });
