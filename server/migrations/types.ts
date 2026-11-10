@@ -22,6 +22,8 @@ export interface MigrationResult {
   totalTables: number;
   baselineCreated: boolean;
   backupPath?: string;
+  backupFileSynced?: boolean;
+  backupDirectorySynced?: boolean;
   durationMs: number;
 }
 

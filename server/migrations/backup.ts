@@ -1,6 +1,7 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { type BackupResult, MigrationBackupError } from './types.js';
 
 export type { BackupResult };
@@ -9,14 +10,23 @@ export type { BackupResult };
  * Creates a transactionally consistent, WAL-safe online backup of a file-backed SQLite database
  * using Node.js 24's native `backup()` API.
  *
- * Fail-Closed Contract:
- * - In-memory databases throw MigrationBackupError if passed here (caller must handle memory exception).
- * - If the source file does not exist on disk, throws MigrationBackupError (no silent bypass).
- * - Requires positive page count returned by backup(), positive byte size, and full SQLite integrity.
- * - Reopens backup to verify table schema and row count parity against source database.
- * - Flushes file to durable storage via fsync (using r+ access).
- * - Attempts directory sync on supported POSIX filesystems.
- * - Removes partial or failed backup artifacts on error so no corrupted files linger.
+ * Safety & Ownership Invariants (Step 02.1.3):
+ * 1. Fail-Closed Validation:
+ *    - In-memory databases throw MigrationBackupError immediately.
+ *    - Source file must exist on disk before backup.
+ * 2. Collision-Resistant Cryptographic Naming:
+ *    - Uses ISO timestamp + 64-bit cryptographic salt + target version.
+ * 3. Strict Artifact Ownership:
+ *    - Streams backup to a unique, attempt-owned staging file (.tmp_backup_<UUID>.sqlite).
+ *    - On collision with a pre-existing destination, the pre-existing file is NEVER unlinked.
+ *    - Cleanup handles ONLY artifacts owned and created by the current attempt.
+ * 4. Fail-Closed Durability Synchronization:
+ *    - Opens backup with 'r+' for Win32 FlushFileBuffers / POSIX fsync compatibility.
+ *    - If file fsync fails, throws MigrationBackupError (migrations abort before database mutation).
+ *    - Attempts directory sync on POSIX, records OS limitation on Windows (directorySynced: false).
+ * 5. Integrity & Parity Verification:
+ *    - Verifies pagesCopied > 0, stat size > 0, PRAGMA integrity_check, PRAGMA quick_check,
+ *      and exact source table and record count parity.
  *
  * @param db Active DatabaseSync instance
  * @param dbLocation Filesystem location of the database file
@@ -42,56 +52,84 @@ export async function createWalSafeBackup(
 
   const dbDir = path.dirname(dbLocation);
   const backupDir = path.join(dbDir, 'backups');
-  let backupPath: string | undefined;
+  let ownedArtifactPath: string | null = null;
 
   try {
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
 
-    // Generate collision-resistant filename with ISO timestamp and random salt
+    // Generate collision-resistant filename with ISO timestamp and 64-bit cryptographic salt
     const now = new Date();
     const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\..+/, 'Z');
-    const salt = Math.random().toString(36).substring(2, 6);
-    const filename = `nexora.sqlite.bak_${timestamp}_${salt}_pre_v${targetVersion}.sqlite`;
-    backupPath = path.join(backupDir, filename);
+    const salt = crypto.randomBytes(8).toString('hex');
+    const finalFilename = `nexora.sqlite.bak_${timestamp}_${salt}_pre_v${targetVersion}.sqlite`;
+    const finalBackupPath = path.join(backupDir, finalFilename);
 
-    if (fs.existsSync(backupPath)) {
-      throw new MigrationBackupError(`Backup destination already exists: ${backupPath}`);
+    // If destination already exists prior to backup, reject with MigrationBackupError.
+    // Notice: ownedArtifactPath is still null, guaranteeing pre-existing file is never touched.
+    if (fs.existsSync(finalBackupPath)) {
+      throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     }
 
+    // Use a unique, attempt-owned staging file for streaming backup
+    const attemptId = crypto.randomUUID();
+    const stagingPath = path.join(backupDir, `.tmp_backup_${attemptId}.sqlite`);
+    ownedArtifactPath = stagingPath;
+
     // Execute native online backup API - Node.js 24 returns total pages copied
-    const pagesCopied = await backup(db, backupPath);
+    const pagesCopied = await backup(db, stagingPath);
 
     if (typeof pagesCopied !== 'number' || pagesCopied <= 0) {
       throw new MigrationBackupError(`WAL backup failed: non-positive page count returned (${pagesCopied})`);
     }
 
     // Verify file existence and positive byte count
-    if (!fs.existsSync(backupPath)) {
-      throw new MigrationBackupError(`Backup file was not created on disk: ${backupPath}`);
+    if (!fs.existsSync(stagingPath)) {
+      throw new MigrationBackupError(`Backup file was not created on disk: ${stagingPath}`);
     }
 
-    const stat = fs.statSync(backupPath);
+    const stat = fs.statSync(stagingPath);
     if (stat.size === 0) {
-      throw new MigrationBackupError(`Backup file was created with 0 bytes: ${backupPath}`);
+      throw new MigrationBackupError(`Backup file was created with 0 bytes: ${stagingPath}`);
     }
 
     // Verify database integrity on the backup file and record parity with source
-    verifyBackupIntegrity(backupPath, db);
+    verifyBackupIntegrity(stagingPath, db);
 
-    // Durability synchronization on backup file
+    // Durability synchronization on backup file:
+    // Open with 'r+' so FlushFileBuffers succeeds on Win32 and fsync on POSIX.
+    // If file fsync fails, FAIL CLOSED: do not allow migrations to proceed without durable backup.
     let fileSynced = false;
     try {
-      const fd = fs.openSync(backupPath, 'r+');
+      const fd = fs.openSync(stagingPath, 'r+');
       try {
         fs.fsyncSync(fd);
         fileSynced = true;
       } finally {
         fs.closeSync(fd);
       }
-    } catch {
-      fileSynced = false;
+    } catch (syncErr: any) {
+      throw new MigrationBackupError(
+        `Failed to flush backup file to durable storage via fsync: ${syncErr?.message}`,
+        syncErr
+      );
+    }
+
+    // Promote verified staging file to final backup destination.
+    // Check destination again to catch any collision created during staging:
+    if (fs.existsSync(finalBackupPath)) {
+      throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
+    }
+
+    try {
+      fs.renameSync(stagingPath, finalBackupPath);
+      ownedArtifactPath = finalBackupPath;
+    } catch (renameErr: any) {
+      throw new MigrationBackupError(
+        `Failed to promote staging backup file to ${finalBackupPath}: ${renameErr?.message}`,
+        renameErr
+      );
     }
 
     // Directory synchronization where supported by OS/filesystem (POSIX)
@@ -110,7 +148,7 @@ export async function createWalSafeBackup(
     }
 
     return {
-      backupPath,
+      backupPath: finalBackupPath,
       bytes: stat.size,
       pagesCopied,
       fileSynced,
@@ -118,12 +156,18 @@ export async function createWalSafeBackup(
       completedAt: new Date().toISOString(),
     };
   } catch (err: any) {
-    // Clean up partial/broken backup file so no corrupted artifacts linger
-    if (backupPath && fs.existsSync(backupPath)) {
-      try {
-        fs.unlinkSync(backupPath);
-      } catch {
-        // Ignore cleanup failure
+    // Artifact Ownership Rule:
+    // Only clean up the artifact that was created and owned by this attempt.
+    // Never touch or delete pre-existing backup files or collision sentinels.
+    if (ownedArtifactPath) {
+      for (const artifact of [ownedArtifactPath, `${ownedArtifactPath}-wal`, `${ownedArtifactPath}-shm`]) {
+        try {
+          if (fs.existsSync(artifact)) {
+            fs.unlinkSync(artifact);
+          }
+        } catch {
+          // Ignore cleanup failure on attempt-owned file
+        }
       }
     }
     if (err instanceof MigrationBackupError) throw err;

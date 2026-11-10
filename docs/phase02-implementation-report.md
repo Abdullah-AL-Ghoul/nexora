@@ -1,32 +1,35 @@
 # NEXORA — Phase 02 Implementation Report
-**Step 02.1, Step 02.1.1 & Step 02.1.2 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract & Race-Safe Lock Reclamation Closure**  
-*Document Version:* 1.2.0  
+**Step 02.1, Step 02.1.1, Step 02.1.2 & Step 02.1.3 Deliverable — Versioned Database Migration Runner, Concurrency, Fail-Closed Backup Contract, Lock Mutual-Exclusion Proof & Artifact Ownership Closure**  
+*Document Version:* 1.3.0  
 *Execution Date:* November 2026  
 *Branch:* `main`  
 *Step 02.1 Approved Baseline Commit:* `54cf0f97e1c8405b3169a973ce325780f8989ec6`  
 *Step 02.1.1 Approved Baseline Commit:* `bf9a9351af96c56a733a37adfb25b25483b87e27`  
+*Step 02.1.2 Approved Baseline Commit:* `74efc003cff99fe9586e10663405c2f5a937be6e`  
 *Lead Engineers:* Principal Software Architect, Senior Backend Engineer, Database Reliability Engineer  
 
 ---
 
 ## 1. Executive Summary
 
-This report documents the completed implementation and engineering remediation of **STEP 02.1, STEP 02.1.1 & STEP 02.1.2: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract & Race-Safe Lock Reclamation Closure** for the NEXORA platform.
+This report documents the completed implementation and engineering remediation of **STEP 02.1, STEP 02.1.1, STEP 02.1.2 & STEP 02.1.3: Migration Runner Correctness, Concurrency, Fail-Closed Backup Contract, Lock Mutual-Exclusion Proof & Artifact Ownership Closure** for the NEXORA platform.
 
 All critical defects identified during the independent architecture reviews have been resolved with mathematical rigor and evidence-backed verification:
 1. **Backup Ordering Fixed:** The runner was restructured so that a verified WAL-safe backup strictly precedes *any* database mutation, including registry creation (`schema_migrations`), DDL, or DML.
 2. **Read-Only Registry Helpers:** `getAppliedMigrations()` is now strictly read-only and never issues DDL. Registry creation is isolated to `ensureMigrationRegistry()`.
 3. **Lock Concurrency & Lifecycle Hardened:** The exclusive migration lock is acquired *before* evaluating migration state. Stale lock deletion solely by age was eliminated; active same-host PIDs are never deleted regardless of age; dead same-host PIDs (`ESRCH`) are verified atomically before unlinking; foreign host or malformed locks fail closed.
-4. **Race-Safe Atomic Lock Reclamation (Step 02.1.2):** Implemented an atomic isolation rename protocol (`fs.renameSync` to unique candidate path) followed by content verification against inspected payload. If a concurrent active lock was created right before the rename, the reclaimer detects the content mismatch and immediately restores the active lock intact, eliminating the TOCTOU window.
-5. **Fail-Closed Backup Contract (Step 02.1.2):** `createWalSafeBackup()` returns `Promise<BackupResult>` (never `null`). Throws `MigrationBackupError` fail-closed if the source database is in-memory or if the file does not exist on disk. Public bypass flags (`backup`, `lock`, `skipIntegrityCheck`) were removed from `MigrationRunnerOptions`.
-6. **Windows Durability Sync & Explicit Reporting (Step 02.1.2):** Backup file handles are opened with `'r+'` for Windows `fsyncSync` compatibility (`fileSynced: true`). Directory sync is attempted for POSIX and caught gracefully for Windows (`directorySynced`). Both flags are explicitly tracked in `BackupResult`.
-7. **Strict Baseline Fingerprint & Metadata Validation:** The baseline validator now extracts full structural metadata (column order, declared types, nullability, defaults, primary keys, and unique indexes) and compares both table-by-table discrepancies and SHA-256 fingerprint against the canonical reference generated from `BASELINE_DDL`.
-8. **Migration Registry Integrity:** The runner validates column definitions, checksum formats (64-char hex SHA-256), unknown versions, duplicate records, and registry sequence gaps (`MigrationRegistryError`).
-9. **Backup Page Count & Record Verification:** The runner captures and asserts the positive page count returned by Node.js 24's native `backup()` API, verifies SQLite integrity (`integrity_check` and `quick_check`), ensures durability via `fsync`, and verifies source table/record count parity in the backup.
-10. **Fail-Closed Path Resolution:** `getDbLocation()` was hardened to throw `MigrationError` rather than silently defaulting to `:memory:`.
-11. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
-12. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
-13. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 9 legacy tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
+4. **Unique Acquisition Token & Release Guard (Step 02.1.3):** Each successful acquisition generates a unique cryptographic UUID (`token`). `release()` unlinks the lock file ONLY if token, PID, and hostname match this specific acquisition instance, preventing accidental release across instances of the same process.
+5. **Lock Mutual-Exclusion & Safe Non-Overwriting Restore (Step 02.1.3):** Stale lock reclamation performs pre-claim snapshot verification (never moves active lock created after snapshot), isolates via `fs.renameSync`, and uses `safeRestoreLock` to guarantee that candidate restoration NEVER overwrites a destination lock created concurrently. Candidate read failure safely restores the file to prevent leaving the main path open.
+6. **Attempt-Owned Backup Staging & Artifact Ownership (Step 02.1.3):** Backups are streamed to a unique attempt-owned staging path (`.tmp_backup_<UUID>.sqlite`) using 64-bit cryptographic salt naming. Collision detection on pre-existing destinations aborts without touching or deleting the pre-existing file, eliminating the collision-cleanup bug.
+7. **Fail-Closed Durability Enforcement & Visibility (Step 02.1.3):** If file fsync fails on the backup handle, the backup is rejected and migrations abort before modifying the database. `MigrationResult` preserves and returns `backupFileSynced: true` and `backupDirectorySynced: boolean`.
+8. **Fail-Closed Backup Contract (Step 02.1.2):** `createWalSafeBackup()` returns `Promise<BackupResult>` (never `null`). Throws `MigrationBackupError` fail-closed if the source database is in-memory or if the file does not exist on disk. Public bypass flags (`backup`, `lock`, `skipIntegrityCheck`) were removed from `MigrationRunnerOptions`.
+9. **Strict Baseline Fingerprint & Metadata Validation:** The baseline validator now extracts full structural metadata (column order, declared types, nullability, defaults, primary keys, and unique indexes) and compares both table-by-table discrepancies and SHA-256 fingerprint against the canonical reference generated from `BASELINE_DDL`.
+10. **Migration Registry Integrity:** The runner validates column definitions, checksum formats (64-char hex SHA-256), unknown versions, duplicate records, and registry sequence gaps (`MigrationRegistryError`).
+11. **Backup Page Count & Record Verification:** The runner captures and asserts the positive page count returned by Node.js 24's native `backup()` API, verifies SQLite integrity (`integrity_check` and `quick_check`), ensures durability via `fsync`, and verifies source table/record count parity in the backup.
+12. **Fail-Closed Path Resolution:** `getDbLocation()` was hardened to throw `MigrationError` rather than silently defaulting to `:memory:`.
+13. **Certification & Media Validation Parity:** Removed `DRAFT` from `verificationStatus` (reserved exclusively for `publicationStatus`); client self-assertion of `VERIFIED` or `DRAFT` is rejected; `EXPIRED` is dynamically derived; `UpdateMediaAssetSchema` and `validateMergedMediaAsset` enforce visibility/publicUrl consistency.
+14. **Zero-Fabrication Policy:** No fictional projects or certifications were seeded into production.
+15. **Absolute Data Safety:** The working database `.data/nexora.sqlite` was **never migrated or modified** (verified 9 legacy tables, 48 products, 5 users, 6 orders intact). All tests ran exclusively on temporary disposable or `:memory:` databases.
 
 ---
 
@@ -117,19 +120,19 @@ Output:
 ```text
  RUN  v5.0.3 C:/Users/abdal/Desktop/nexora
 
- ✓ server/__tests__/pricing.test.ts (11 tests) 30ms
- ✓ server/__tests__/models.test.ts (27 tests) 380ms
- ✓ server/__tests__/migrations.test.ts (46 tests) 4323ms
- ✓ server/__tests__/api.test.ts (30 tests) 4133ms
+ ✓ server/__tests__/pricing.test.ts (11 tests) 24ms
+ ✓ server/__tests__/models.test.ts (27 tests) 281ms
+ ✓ server/__tests__/api.test.ts (30 tests) 3308ms
+ ✓ server/__tests__/migrations.test.ts (56 tests) 6564ms
 
  Test Files  4 passed (4)
-      Tests  114 passed (114)
-   Start at  09:14:48
-   Duration  6.90s (tests 61%, import 20%, transform 18%, worker 1%)
+      Tests  124 passed (124)
+   Start at  09:51:57
+   Duration  7.74s (tests 78%, import 12%, transform 9%, worker 1%)
 ```
 
-**114 tests passed green across 4 test suites (0 failures, 0 skipped).**  
-Net increase: **+34 comprehensive regression tests** added across Step 02.1.1 and Step 02.1.2 (+7 in Step 02.1.2).
+**124 tests passed green across 4 test suites (0 failures, 0 skipped).**  
+Net increase: **+44 comprehensive regression tests** added across Step 02.1.1, Step 02.1.2, and Step 02.1.3 (+10 in Step 02.1.3). Total migration test count: **56 tests**.
 
 ### 4.2 TypeScript Type Checking (`npm run lint`)
 
@@ -180,24 +183,25 @@ Record counts: { products: 48, users: 5, orders: 6 }
 
 ---
 
-## 5. Summary of Remediation Changes (Step 02.1.1 & Step 02.1.2)
+## 5. Summary of Remediation Changes (Step 02.1.1, Step 02.1.2 & Step 02.1.3)
 
 | File Path | Nature | Description of Remediation |
 |---|---|---|
-| `server/migrations/runner.ts` | **MODIFIED** | Enforced backup-before-mutation ordering; read-only `getAppliedMigrations`; fail-closed `getDbLocation`; lock acquisition before pending evaluation; removed public bypass flags; mandatory verified backup on non-empty persistent DB |
-| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract (never returns null); added `'r+'` fsync handle for Windows compatibility; added partial artifact cleanup; returned `fileSynced` and `directorySynced` |
-| `server/migrations/lock.ts` | **MODIFIED** | Eliminated age-based stale deletion; verified dead same-host PID cleanup (`ESRCH`); implemented race-safe atomic isolation rename protocol (`fs.renameSync` + content verification + restore on race); fail-closed on foreign/malformed locks |
+| `server/migrations/runner.ts` | **MODIFIED** | Enforced backup-before-mutation ordering; read-only `getAppliedMigrations`; fail-closed `getDbLocation`; lock acquisition before pending evaluation; removed public bypass flags; mandatory verified backup on non-empty persistent DB; fail-closed file fsync verification; preserved durability booleans in result |
+| `server/migrations/backup.ts` | **MODIFIED** | Captured and validated `pagesCopied`; fail-closed backup contract; 64-bit cryptographic salt naming; attempt-owned unique staging (`.tmp_backup_<UUID>`); fixed collision-cleanup bug; fail-closed file fsync; cleaned up auxiliary `-wal`/`-shm` staging files; returned `fileSynced` and `directorySynced` |
+| `server/migrations/lock.ts` | **MODIFIED** | Implemented unique acquisition token (UUID); strict token-verified release; pre-claim snapshot verification; atomic isolation rename; safe non-overwriting candidate restore (`safeRestoreLock`); candidate read failure protection; fail-closed on foreign/malformed/tokenless locks |
 | `server/migrations/001_baseline.ts` | **MODIFIED** | Implemented deterministic canonical baseline generation, structural metadata extraction, and fingerprint comparison |
-| `server/migrations/types.ts` | **MODIFIED** | Added `MigrationRegistryError`; updated `BackupResult` to include `pagesCopied`, `fileSynced`, and `directorySynced`; restricted `MigrationRunnerOptions` to remove bypass options |
+| `server/migrations/types.ts` | **MODIFIED** | Added `MigrationRegistryError`; updated `BackupResult` with `fileSynced` and `directorySynced`; updated `MigrationResult` with `backupFileSynced` and `backupDirectorySynced`; updated `LockInfo` with `token` |
 | `server/schemas.ts` | **MODIFIED** | Removed `DRAFT` from certification verification status; aligned Zod enums with SQLite CHECK constraints; added media update refinement |
-| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 29 new regression tests covering backup ordering, concurrency, atomic lock lifecycle & race reclamation, registry validation, durability booleans, and strict baseline discrepancies |
+| `server/__tests__/migrations.test.ts` | **MODIFIED** | Added 39 comprehensive regression tests (total: 56 migration tests) covering lock mutual exclusion proofs, candidate restoration races, collision sentinel preservation, artifact ownership, and durability visibility |
 | `server/__tests__/models.test.ts` | **MODIFIED** | Added 5 new tests covering certification verification status constraints, admin expiration policy, and media update refinement |
-| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1 & Step 02.1.2 defects, fixes, test counts, and evidence |
+| `docs/phase02-implementation-report.md` | **MODIFIED** | Updated with Step 02.1.1, Step 02.1.2 & Step 02.1.3 defects, fixes, test counts, and evidence |
 | `docs/phase02-step-02.1.2-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.2 fail-closed backup contract, race-safe lock reclamation, and evidence |
+| `docs/phase02-step-02.1.3-closure-report.md` | **CREATED** | Dedicated closure report detailing Step 02.1.3 lock mutual-exclusion proof, artifact ownership, and durability enforcement |
 
 ---
 
 ## 6. Project Clearance & Next Steps
 
-1. **Step 02.1.2 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.2-closure-report.md`.
-2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, and baseline detection now proven safe and resilient under automated testing (114 passing tests, 0 failures), the database architecture is fully cleared for controlled migration application in Step 02.2.
+1. **Step 02.1.3 Closure Complete:** Full documentation and verification published in `docs/phase02-step-02.1.3-closure-report.md`.
+2. **Phase 02 Rollout (Step 02.2):** With the migration runner, backup engine, lock lifecycle, and baseline detection now proven safe and resilient under automated testing (124 passing tests, 0 failures), the database architecture is fully cleared for controlled migration application in Step 02.2.

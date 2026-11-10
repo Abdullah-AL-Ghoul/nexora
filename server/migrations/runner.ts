@@ -226,6 +226,8 @@ export async function runMigrations(
   await lock.acquire(options.lockTimeoutMs ?? 5000);
 
   let backupPath: string | undefined;
+  let backupFileSynced: boolean | undefined;
+  let backupDirectorySynced: boolean | undefined;
 
   try {
     // Re-read migration state while holding the lock
@@ -270,7 +272,17 @@ export async function runMigrations(
             `Mandatory backup failed to produce a valid BackupResult for file database: ${dbLocation}`
           );
         }
+
+        // Durability Policy: file fsync MUST be confirmed before modifying database
+        if (!backupResult.fileSynced) {
+          throw new MigrationBackupError(
+            `Mandatory backup failed durability verification: file fsync was not confirmed for ${backupResult.backupPath}`
+          );
+        }
+
         backupPath = backupResult.backupPath;
+        backupFileSynced = backupResult.fileSynced;
+        backupDirectorySynced = backupResult.directorySynced;
       } else {
         // Documented exception: Fresh, empty database (0 application tables) has no existing state to preserve.
       }
@@ -351,6 +363,8 @@ export async function runMigrations(
       totalTables,
       baselineCreated,
       backupPath,
+      backupFileSynced,
+      backupDirectorySynced,
       durationMs: Date.now() - startTime,
     };
   } finally {
