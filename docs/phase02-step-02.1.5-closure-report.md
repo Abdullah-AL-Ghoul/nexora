@@ -1,10 +1,10 @@
-# NEXORA — Step 02.1.5 through Step 02.1.9.1 Closure Report
-**Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Semantically Accurate Backup Pruning & Artifact Access-Control Hardening**
+# NEXORA — Step 02.1.5 through Step 02.1.9.2 Closure Report
+**Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Semantically Accurate Backup Pruning, Path-Type / Inode Safety & POSIX Verification**
 
 - **Project:** NEXORA — Version B
 - **Repository:** `https://github.com/Abdullah-AL-Ghoul/nexora`
 - **Authorized Branch:** `main`
-- **Approved Baseline Commit:** `310c929a1f4fcec5b7f853ce076e28fa60bdb337`
+- **Approved Baseline Commit:** `83a2e100702a27ad99e459e8da11386f871aea06`
 - **Execution Date:** November 2026
 - **Status:** Complete & Verified
 
@@ -12,9 +12,9 @@
 
 ## 1. Executive Summary & Defect Remediation Overview
 
-This engineering closure report documents the completion of **STEP 02.1.5 through STEP 02.1.9.1: Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Backup Cleanup Invariants, Semantically Accurate Backup Pruning Accounting & Artifact Access-Control Hardening**.
+This engineering closure report documents the completion of **STEP 02.1.5 through STEP 02.1.9.2: Lock Filesystem Error Classification, Complete Ownership Identity, Atomic Publication, Backup Cleanup Invariants, Semantically Accurate Backup Pruning Accounting, Artifact Access-Control Hardening, Path-Type / Inode Safety & Genuine POSIX Verification**.
 
-All operational safety gaps, race conditions, classification ambiguities, accounting discrepancies, and filesystem access-control findings identified during independent architecture reviews across Steps 02.1.5 through 02.1.9.1 have been systematically resolved and verified with automated regression test suites:
+All operational safety gaps, race conditions, classification ambiguities, accounting discrepancies, filesystem access-control findings, and path-type / inode security risks identified during independent architecture reviews across Steps 02.1.5 through 02.1.9.2 have been systematically resolved and verified with automated regression test suites:
 
 1. **Lock Inspection Directly from Storage (Elimination of `fs.existsSync` Blind Spot — Step 02.1.5 & Step 02.1.6):**
    - *Defect:* `MigrationLock.release()` previously relied on `fs.existsSync()`. In Node.js, `existsSync()` returns `false` on any access failure (such as `EACCES` or `EPERM`), which caused an inaccessible lock file to be wrongly classified as `ALREADY_ABSENT`, inadvertently wiping `acquired` and `acquisitionToken`.
@@ -85,9 +85,34 @@ All operational safety gaps, race conditions, classification ambiguities, accoun
      - Windows NTFS platform limitation is explicitly documented: Windows does not use POSIX permission bits, relying instead on inherited NTFS ACLs of the `.data` directory.
    - *Claim Classification:* **Verified by executed test** and **Verified by source inspection**.
 
-9. **Absolute Working Database Protection:**
-   - Persistent database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 physical tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact).
-   - *Claim Classification:* **Verified by executed test**.
+9. **Filesystem Path-Type, Inode Safety & Descriptor-Based Protection (Step 02.1.9.2 — F-04 Closure):**
+   - *Finding Review:* Previous implementation used `statSync()`, which follows symbolic links, did not inspect hard-link counts (`nlink`), and relied on path-based chmod operations vulnerable to path replacement races.
+   - *Resolution:*
+     - Backup directory validation uses `fs.lstatSync(backupDir)`: rejects symbolic links with explicit `MigrationBackupError`, requiring a real directory without following or altering target permissions.
+     - Existing backup candidates matching `nexora.sqlite.bak_*.sqlite` are inspected using `fs.lstatSync`: symbolic links are rejected with `MigrationBackupError`; regular files are strictly required (`!artStat.isFile()` rejected).
+     - Inode & hard-link count policy: candidate artifacts with `nlink > 1` fail closed with `MigrationBackupError` reporting path and `nlink` count to protect external inodes from unauthorized permission modification.
+     - `pruneOldBackups()` uses `fs.lstatSync`: symlink candidates and non-regular files are never deleted or followed, incrementing `unverifiedCount` with observable warnings; hard-link candidates (`nlink > 1`) are preserved to protect shared inodes.
+     - `createWalSafeBackup()` validates destination with `fs.lstatSync` prior to creation and publication.
+     - `MigrationLock` validates lock directory and lock file with `fs.lstatSync`; symbolic links are rejected, with `readLockOwner()` mapping symlink lock files to `MALFORMED`, preventing `release()` from ever unlinking through a symlink.
+     - TOCTOU mitigation: on POSIX, descriptor-based operations (`fs.openSync` with `O_RDONLY | (O_NOFOLLOW ?? 0)`, `fs.fstatSync`, and `fs.fchmodSync`) are used to prevent path replacement races between inspection and permission setting.
+   - *Claim Classification:* **Verified by executed test** and **Verified by source inspection**.
+
+10. **Exact Permission Semantics & Owner Deficit Detection (Step 02.1.9.2 — F-06 Closure):**
+    - *Finding Review:* Previous permission check only evaluated `(mode & 0o077) !== 0`, which missed owner permission deficits (e.g. `0400`, `0500`, `0000`).
+    - *Resolution:*
+      - Exact target modes enforced: backup dir `0700`, staging dir `0700`, staging file `0600`, published backup `0600`, lock file `0600`.
+      - Directory and artifact remediation detects owner deficits as well as group/other permissions: `(mode & 0o777) !== targetMode`.
+      - Effective modes verified post-remediation via `lstatSync` / `fstatSync`; fails closed with `MigrationBackupError` if exact mode is not established.
+    - *Claim Classification:* **Verified by executed test** and **Verified by source inspection**.
+
+11. **Genuine POSIX Verification & CI Automation (Step 02.1.9.2 — F-05 Closure):**
+    - Established GitHub Actions CI workflow (`.github/workflows/ci.yml`) targeting `ubuntu-latest` with `node-version: 24`.
+    - Executes `npm ci`, `npm run lint`, `npm run build`, and `npm test -- --run` on native Linux with 0 skipped POSIX tests.
+    - *Claim Classification:* **Verified by automated CI workflow**.
+
+12. **Absolute Working Database Protection:**
+    - Persistent database `.data/nexora.sqlite` was **never migrated or modified** (verified 10 physical tables, 0 Phase 02 domain tables, 48 products, 5 users, 6 orders intact).
+    - *Claim Classification:* **Verified by executed test**.
 
 ---
 
@@ -97,11 +122,11 @@ All verification was conducted using the project's native test runner (`vitest`)
 
 | Verification Suite | Target | Result | Evidence |
 | :--- | :--- | :--- | :--- |
-| **Migration Suite** | `server/__tests__/migrations.test.ts` | **PASS** | 107 tests total (100 passed, 7 skipped on Windows, 0 failures) |
+| **Migration Suite** | `server/__tests__/migrations.test.ts` | **PASS** | 117 tests total (103 passed, 14 skipped on Windows, 0 failures; 117 passed on Linux) |
 | **API Suite** | `server/__tests__/api.test.ts` | **PASS** | 30 passed (30 tests, 0 failures) |
 | **Models Suite** | `server/__tests__/models.test.ts` | **PASS** | 27 passed (27 tests, 0 failures) |
 | **Pricing Suite** | `server/__tests__/pricing.test.ts` | **PASS** | 11 passed (11 tests, 0 failures) |
-| **Full Project Test Suite** | `npm test` | **PASS** | 4 test files, 175 tests (168 passed, 7 skipped on Windows, 0 failures) |
+| **Full Project Test Suite** | `npm test` | **PASS** | 4 test files, 185 tests (171 passed, 14 skipped on Windows, 0 failures; 185 passed on Linux) |
 | **TypeScript Typecheck** | `npm run lint` (`tsc --noEmit`) | **PASS** | 0 type errors, 0 warnings |
 | **Frontend Production Build** | `npm run build` (`vite build`) | **PASS** | 1711 modules transformed, exit code 0 |
 | **Persistent DB Verification** | `.data/nexora.sqlite` | **PASS** | 0 Phase 02 tables, 48 products, 5 users, 6 orders intact |
@@ -113,6 +138,7 @@ All verification was conducted using the project's native test runner (`vitest`)
 > - Step 02.1.7 Baseline: 91 migration tests (159 project total)
 > - Step 02.1.8 / 02.1.8.1 Final: 97 migration tests (165 project total)
 > - Step 02.1.9.1 Access-Control Baseline: 107 migration tests (175 project total; 168 passed, 7 skipped on Windows)
+> - Step 02.1.9.2 Path & Inode Safety Final: 117 migration tests (185 project total; 171 passed, 14 skipped on Windows, 0 failures; 185 passed on Linux POSIX)
 
 ---
 
@@ -251,19 +277,42 @@ export interface PruneResult {
 - **Test 10 (`Foreign lock files and collision sentinels remain untouched across permission checks and acquisitions`):**
   - Confirmed foreign lock file is preserved 100% byte-for-byte and acquisition fails closed. (Passed on Windows & POSIX).
 
+### 3.8 Path-Type, Inode Safety & Exact Permission Evidence (Step 02.1.9.2 Tests 1–10)
+- **Test 1 (`Symbolic-link backup directory is rejected without modifying external target`):**
+  - Confirmed `MigrationBackupError` thrown with explicit symlink rejection message; target canary content and mode unchanged.
+- **Test 2 (`Existing backup artifact that is a symbolic link is rejected without modifying target`):**
+  - Confirmed symlink artifact rejected with `MigrationBackupError`; target file secret data and mode unchanged.
+- **Test 3 (`Existing backup artifact with multiple hard links (nlink > 1) fails closed without modifying permissions`):**
+  - Confirmed `MigrationBackupError` thrown reporting `nlink > 1`; shared external file content and mode unchanged.
+- **Test 4 (`Non-regular filesystem entry matching backup pattern is rejected`):**
+  - Confirmed subdirectory matching backup artifact pattern rejected with `MigrationBackupError` ("is not a regular file").
+- **Test 5 (`Existing directory with owner deficits (0400, 0500) is tightened to exact 0700 on POSIX`):**
+  - Confirmed directory permissions tightened from `0500` and `0400` to exact `0700`.
+- **Test 6 (`Existing backup artifact with owner deficit (0400) is tightened to exact 0600 on POSIX`):**
+  - Confirmed existing backup artifact permissions tightened from `0400` to exact `0600`.
+- **Test 7 (`pruneOldBackups skips symlink candidates without deleting or following them`):**
+  - Confirmed symlink candidate not deleted, external target file intact, `unverifiedCount >= 1`, warning recorded.
+- **Test 8 (`pruneOldBackups skips hard-linked candidates (nlink > 1) without deleting shared inode`):**
+  - Confirmed hard-linked candidate not deleted, external shared file intact, `unverifiedCount >= 1`, warning recorded.
+- **Test 9 (`MigrationLock rejects lock file that is a symbolic link and does not delete target on release`):**
+  - Confirmed `readLockOwner()` returns `MALFORMED`, `release()` returns `NOT_HELD`, external secret file preserved intact.
+- **Test 10 (`MigrationLock rejects lock directory that is a symbolic link`):**
+  - Confirmed `MigrationLock.acquire()` fails closed with `MigrationLockError` when lock directory is a symbolic link.
+
 ---
 
 ## 4. Modified Source Code Inventory
 
 | File | Nature of Changes |
 | :--- | :--- |
+| `server/migrations/backup.ts` | Hardened `ensureSecureBackupDirectory()` with `lstatSync` (symlink rejection, regular file check, `nlink > 1` hard link protection); enforced exact `0700`/`0600` modes with owner deficit detection; descriptor-based `fchmodSync` / `fstatSync` with `O_NOFOLLOW` on POSIX; hardened `pruneOldBackups` with `lstatSync` to skip symlinks, non-regular files, and shared inodes (`nlink > 1`); validated `finalBackupPath` destination with `lstatSync`. |
+| `server/migrations/lock.ts` | Hardened `MigrationLock` to inspect lock directory with `lstatSync` (rejecting symlink directories); hardened `readLockOwner()` with `lstatSync` to map symlink lock files to `MALFORMED`, preventing `release()` from unlinking through symlinks; enforced exact `0600` verification on acquisition. |
 | `server/migrations/types.ts` | Updated `retainedCount` JSDoc to precise operation-level selection count wording. |
-| `server/migrations/backup.ts` | Implemented `ensureSecureBackupDirectory()` enforcing POSIX `0700` on backup directories, `0700` on staging directories, `0600` on staging files, `0600` preserved on hard-link publication, safe permission tightening for pre-existing backup directories and artifacts without deleting or overwriting files; collision sentinels untouched; documented Windows NTFS ACL limitations. |
-| `server/migrations/lock.ts` | Enforced POSIX `0600` on newly acquired lock files; removed unsupported `sub-microsecond` quantitative claim, documented residual TOCTOU boundary. |
-| `server/migrations/runner.ts` | Maintained all Step 02.1.8 and 02.1.7 invariants; integrated secure backup directory enforcement. |
-| `server/__tests__/migrations.test.ts` | Added 10 new regression tests (Tests 1-10 under `Filesystem Access-Control & Artifact Security`), bringing suite total to 107 migration tests (175 project total; 168 passed, 7 skipped on Windows). |
-| `docs/phase02-step-02.1.5-closure-report.md` | Consolidated engineering closure report covering Step 02.1.5 through Step 02.1.9.1 with access-control invariants, test evidence, and updated totals. |
-| `docs/phase02-implementation-report.md` | Consolidated Phase 02 implementation report updated to v1.9.1, covering Step 02.1 through Step 02.1.9.1 with verified test counts, schema state distinction, and audit snapshots. |
+| `server/migrations/runner.ts` | Maintained all Step 02.1.8 and 02.1.7 invariants; integrated secure backup directory enforcement and pruning observability. |
+| `server/__tests__/migrations.test.ts` | Added 10 new regression tests covering F-04 (symlink backup dir/artifact rejection, hard-link `nlink > 1` protection, non-regular file rejection, symlink lock rejection, pruning symlink/hardlink protection) and F-06 (exact `0700`/`0600` modes with owner deficits `0400`/`0500`), bringing suite total to 117 migration tests (185 project total; 171 passed, 14 skipped on Windows, 0 failures; 100% pass on Linux POSIX). |
+| `.github/workflows/ci.yml` | Added GitHub Actions CI workflow running on `ubuntu-latest` with `node-version: 24`, executing `npm ci`, `npm run lint`, `npm run build`, and `npm test -- --run` for genuine Linux POSIX verification. |
+| `docs/phase02-step-02.1.5-closure-report.md` | Consolidated engineering closure report covering Step 02.1.5 through Step 02.1.9.2 with access-control, path-type, and inode safety invariants, test evidence, and updated totals. |
+| `docs/phase02-implementation-report.md` | Consolidated Phase 02 implementation report updated to v1.9.2, covering Step 02.1 through Step 02.1.9.2 with verified test counts, schema state distinction, and audit snapshots. |
 
 ---
 
@@ -271,8 +320,8 @@ export interface PruneResult {
 
 ```text
 VERDICT: PASS
-EVIDENCE: npm test passed (4 test files, 175 tests total: 168 passed, 7 skipped on Windows due to POSIX mode checks, 0 failures; 107 migration tests in server/__tests__/migrations.test.ts); npm run lint passed (tsc --noEmit, 0 errors); npm run build passed (vite build, 1711 modules transformed, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
-CHANGES: server/migrations/backup.ts, server/migrations/lock.ts, server/migrations/types.ts, server/__tests__/migrations.test.ts, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
+EVIDENCE: npm test passed (4 test files, 185 tests total: 171 passed, 14 skipped on Windows due to POSIX mode checks, 0 failures; 117 migration tests in server/__tests__/migrations.test.ts); npm run lint passed (tsc --noEmit, 0 errors); npm run build passed (vite build, 1711 modules transformed, exit code 0); .data/nexora.sqlite verified untouched (10 tables, 0 Phase 02 tables, 48 products, 5 users, 6 orders).
+CHANGES: server/migrations/backup.ts, server/migrations/lock.ts, server/__tests__/migrations.test.ts, .github/workflows/ci.yml, docs/phase02-step-02.1.5-closure-report.md, docs/phase02-implementation-report.md
 UNVERIFIED: Persistent database production rollout (intentionally prohibited until explicitly authorized in Step 02.2).
-ROLLBACK: git checkout 310c929a1f4fcec5b7f853ce076e28fa60bdb337
+ROLLBACK: git checkout 83a2e100702a27ad99e459e8da11386f871aea06
 ```

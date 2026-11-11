@@ -384,7 +384,22 @@ export class MigrationLock {
 
     try {
       const lockDir = path.dirname(this.lockFilePath);
-      if (!fs.existsSync(lockDir)) {
+      let dirLstat: fs.Stats | null = null;
+      try {
+        dirLstat = fs.lstatSync(lockDir);
+      } catch (dirErr: any) {
+        if (dirErr?.code !== 'ENOENT') {
+          throw new MigrationLockError(`Failed to inspect lock directory "${lockDir}": ${dirErr?.message}`);
+        }
+      }
+
+      if (dirLstat) {
+        if (dirLstat.isSymbolicLink()) {
+          throw new MigrationLockError(
+            `Lock directory "${lockDir}" is a symbolic link. Symbolic-link lock directories are rejected for security.`
+          );
+        }
+      } else {
         fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
       }
 
@@ -409,6 +424,12 @@ export class MigrationLock {
         } catch (chmodErr: any) {
           throw new MigrationLockError(
             `Failed to enforce restrictive permissions (0600) on newly acquired lock file "${this.lockFilePath}": ${chmodErr?.message}`
+          );
+        }
+        const lockStat = fs.lstatSync(this.lockFilePath);
+        if ((lockStat.mode & 0o777) !== 0o600) {
+          throw new MigrationLockError(
+            `Lock file "${this.lockFilePath}" effective mode (${(lockStat.mode & 0o777).toString(8)}) is not 0600.`
           );
         }
       }
@@ -455,6 +476,33 @@ export class MigrationLock {
         status: 'ABSENT',
         owner: null,
         details: 'Lock file path is null',
+      };
+    }
+
+    let lstat: fs.Stats;
+    try {
+      lstat = fs.lstatSync(this.lockFilePath);
+    } catch (statErr: any) {
+      if (statErr?.code === 'ENOENT') {
+        return {
+          status: 'ABSENT',
+          owner: null,
+          details: `Lock file confirmed absent (ENOENT): ${this.lockFilePath}`,
+        };
+      }
+      return {
+        status: 'FILESYSTEM_ERROR',
+        owner: null,
+        error: statErr instanceof Error ? statErr : new Error(String(statErr)),
+        details: `Filesystem error inspecting lock file (${statErr?.code || 'UNKNOWN'}): ${statErr?.message}`,
+      };
+    }
+
+    if (lstat.isSymbolicLink()) {
+      return {
+        status: 'MALFORMED',
+        owner: null,
+        details: `Lock file "${this.lockFilePath}" is a symbolic link. Symbolic-link lock files are rejected for security.`,
       };
     }
 

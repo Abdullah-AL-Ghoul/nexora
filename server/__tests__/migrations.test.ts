@@ -2582,11 +2582,16 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
 
       // Simulate readdir failure when pruneOldBackups runs
       const origReaddir = fs.readdirSync;
+      let readdirCalls = 0;
       const readdirSpy = vi.spyOn(fs, 'readdirSync').mockImplementation(((p: any, ...args: any[]) => {
         if (typeof p === 'string' && p === backupDir) {
-          const err: any = new Error('Simulated I/O failure on backup directory read during post-commit pruning');
-          err.code = 'EIO';
-          throw err;
+          readdirCalls++;
+          // Allow initial inspection in ensureSecureBackupDirectory, fail on post-commit pruneOldBackups
+          if (readdirCalls > 1) {
+            const err: any = new Error('Simulated I/O failure on backup directory read during post-commit pruning');
+            err.code = 'EIO';
+            throw err;
+          }
         }
         return (origReaddir as any)(p, ...args);
       }) as any);
@@ -3166,5 +3171,309 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
       // Cleanup
       fs.unlinkSync(lockFile);
     });
+  });
+
+  describe('Filesystem Path-Type, Inode & Exact Permission Safety (Step 02.1.9.2)', () => {
+    let tempDir: string;
+    let dbPath: string;
+    const isWindows = process.platform === 'win32';
+
+    const canCreateSymlinks = (() => {
+      try {
+        const testSrc = path.join(os.tmpdir(), `test-symlink-src-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        const testLink = path.join(os.tmpdir(), `test-symlink-link-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        fs.writeFileSync(testSrc, 'test');
+        fs.symlinkSync(testSrc, testLink);
+        fs.unlinkSync(testLink);
+        fs.unlinkSync(testSrc);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    const canCreateHardlinks = (() => {
+      try {
+        const testSrc = path.join(os.tmpdir(), `test-hardlink-src-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        const testLink = path.join(os.tmpdir(), `test-hardlink-link-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        fs.writeFileSync(testSrc, 'test');
+        fs.linkSync(testSrc, testLink);
+        fs.unlinkSync(testLink);
+        fs.unlinkSync(testSrc);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexora-test-f04-f06-'));
+      dbPath = path.join(tempDir, 'nexora.sqlite');
+    });
+
+    afterEach(() => {
+      if (fs.existsSync(tempDir)) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+          // Ignore temp cleanup errors
+        }
+      }
+    });
+
+    it.runIf(canCreateSymlinks)(
+      '1. Symbolic-link backup directory is rejected without modifying external target',
+      () => {
+        const externalTargetDir = path.join(tempDir, 'external-target-dir');
+        fs.mkdirSync(externalTargetDir, { recursive: true });
+        const canaryFile = path.join(externalTargetDir, 'canary.txt');
+        fs.writeFileSync(canaryFile, 'CANARY_CONTENT');
+
+        let targetMode = 0;
+        if (!isWindows) {
+          fs.chmodSync(externalTargetDir, 0o755);
+          targetMode = fs.statSync(externalTargetDir).mode & 0o777;
+        }
+
+        const symlinkBackupDir = path.join(tempDir, 'backups-symlink');
+        fs.symlinkSync(externalTargetDir, symlinkBackupDir);
+
+        expect(() => ensureSecureBackupDirectory(symlinkBackupDir)).toThrow(MigrationBackupError);
+        try {
+          ensureSecureBackupDirectory(symlinkBackupDir);
+        } catch (err: any) {
+          expect(err.message).toContain('is a symbolic link');
+          expect(err.message).toContain('rejected for security');
+        }
+
+        // Verify target content and mode are byte-for-byte untouched
+        expect(fs.readFileSync(canaryFile, 'utf8')).toBe('CANARY_CONTENT');
+        if (!isWindows) {
+          expect(fs.statSync(externalTargetDir).mode & 0o777).toBe(targetMode);
+        }
+      }
+    );
+
+    it.runIf(canCreateSymlinks)(
+      '2. Existing backup artifact that is a symbolic link is rejected without modifying target',
+      () => {
+        const backupDir = path.join(tempDir, 'backups');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        const externalTargetFile = path.join(tempDir, 'external-secret.sqlite');
+        fs.writeFileSync(externalTargetFile, 'TARGET_SECRET_DATA');
+
+        let targetMode = 0;
+        if (!isWindows) {
+          fs.chmodSync(externalTargetFile, 0o644);
+          targetMode = fs.statSync(externalTargetFile).mode & 0o777;
+        }
+
+        const symlinkArtifact = path.join(backupDir, 'nexora.sqlite.bak_20261111T000000Z_aabbccdd11223344_pre_v1.sqlite');
+        fs.symlinkSync(externalTargetFile, symlinkArtifact);
+
+        expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
+        try {
+          ensureSecureBackupDirectory(backupDir);
+        } catch (err: any) {
+          expect(err.message).toContain('is a symbolic link');
+          expect(err.message).toContain('rejected for security');
+        }
+
+        // Target content and permissions remain completely untouched
+        expect(fs.readFileSync(externalTargetFile, 'utf8')).toBe('TARGET_SECRET_DATA');
+        if (!isWindows) {
+          expect(fs.statSync(externalTargetFile).mode & 0o777).toBe(targetMode);
+        }
+      }
+    );
+
+    it.runIf(canCreateHardlinks)(
+      '3. Existing backup artifact with multiple hard links (nlink > 1) fails closed without modifying permissions',
+      () => {
+        const backupDir = path.join(tempDir, 'backups');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        const externalTargetFile = path.join(tempDir, 'external-shared-file.sqlite');
+        fs.writeFileSync(externalTargetFile, 'SHARED_INODE_DATA');
+
+        let targetMode = 0;
+        if (!isWindows) {
+          fs.chmodSync(externalTargetFile, 0o644);
+          targetMode = fs.statSync(externalTargetFile).mode & 0o777;
+        }
+
+        const hardlinkArtifact = path.join(backupDir, 'nexora.sqlite.bak_20261111T000000Z_aabbccdd11223344_pre_v1.sqlite');
+        fs.linkSync(externalTargetFile, hardlinkArtifact);
+
+        // Verify nlink is indeed > 1
+        expect(fs.statSync(externalTargetFile).nlink).toBeGreaterThan(1);
+
+        expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
+        try {
+          ensureSecureBackupDirectory(backupDir);
+        } catch (err: any) {
+          expect(err.message).toContain('has multiple hard links');
+          expect(err.message).toContain('nlink=');
+        }
+
+        // Target content and permissions remain untouched
+        expect(fs.readFileSync(externalTargetFile, 'utf8')).toBe('SHARED_INODE_DATA');
+        if (!isWindows) {
+          expect(fs.statSync(externalTargetFile).mode & 0o777).toBe(targetMode);
+        }
+      }
+    );
+
+    it('4. Non-regular filesystem entry matching backup pattern is rejected', () => {
+      const backupDir = path.join(tempDir, 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+
+      const subDirArtifact = path.join(backupDir, 'nexora.sqlite.bak_20261111T000000Z_aabbccdd11223344_pre_v1.sqlite');
+      fs.mkdirSync(subDirArtifact);
+
+      expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
+      try {
+        ensureSecureBackupDirectory(backupDir);
+      } catch (err: any) {
+        expect(err.message).toContain('is not a regular file');
+      }
+    });
+
+    it.skipIf(isWindows)(
+      '5. Existing directory with owner deficits (0400, 0500) is tightened to exact 0700 on POSIX',
+      () => {
+        const backupDir = path.join(tempDir, 'owner-deficit-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        // Case 1: 0500 (read and execute, no write)
+        fs.chmodSync(backupDir, 0o500);
+        expect(fs.statSync(backupDir).mode & 0o777).toBe(0o500);
+
+        ensureSecureBackupDirectory(backupDir);
+        expect(fs.statSync(backupDir).mode & 0o777).toBe(0o700);
+
+        // Case 2: 0400 (read only, no write or execute)
+        fs.chmodSync(backupDir, 0o400);
+        expect(fs.statSync(backupDir).mode & 0o777).toBe(0o400);
+
+        ensureSecureBackupDirectory(backupDir);
+        expect(fs.statSync(backupDir).mode & 0o777).toBe(0o700);
+      }
+    );
+
+    it.skipIf(isWindows)(
+      '6. Existing backup artifact with owner deficit (0400) is tightened to exact 0600 on POSIX',
+      () => {
+        const backupDir = path.join(tempDir, 'art-owner-deficit-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        const backupFilename = 'nexora.sqlite.bak_20261111T000000Z_aabbccdd11223344_pre_v1.sqlite';
+        const backupFile = path.join(backupDir, backupFilename);
+        fs.writeFileSync(backupFile, 'DEFICIT_BACKUP');
+        fs.chmodSync(backupFile, 0o400);
+        expect(fs.statSync(backupFile).mode & 0o777).toBe(0o400);
+
+        ensureSecureBackupDirectory(backupDir);
+        expect(fs.statSync(backupFile).mode & 0o777).toBe(0o600);
+      }
+    );
+
+    it.runIf(canCreateSymlinks)(
+      '7. pruneOldBackups skips symlink candidates without deleting or following them',
+      () => {
+        const backupDir = path.join(tempDir, 'prune-symlink-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        // Create 2 valid backups
+        const b1 = path.join(backupDir, 'nexora.sqlite.bak_20261111T000001Z_aaaa1111_pre_v1.sqlite');
+        const b2 = path.join(backupDir, 'nexora.sqlite.bak_20261111T000002Z_bbbb2222_pre_v1.sqlite');
+        fs.writeFileSync(b1, 'B1');
+        fs.writeFileSync(b2, 'B2');
+
+        // Create external file and symlink matching candidate pattern
+        const externalFile = path.join(tempDir, 'external-protect.sqlite');
+        fs.writeFileSync(externalFile, 'PROTECTED_BYTES');
+        const symlinkCandidate = path.join(backupDir, 'nexora.sqlite.bak_20261111T000003Z_cccc3333_pre_v1.sqlite');
+        fs.symlinkSync(externalFile, symlinkCandidate);
+
+        const pruneRes = pruneOldBackups(backupDir, 1);
+        expect(pruneRes.unverifiedCount).toBeGreaterThanOrEqual(1);
+        expect(pruneRes.warnings?.some((w) => w.includes('symbolic link'))).toBe(true);
+
+        // Neither the symlink nor the external file was deleted
+        expect(fs.existsSync(symlinkCandidate)).toBe(true);
+        expect(fs.existsSync(externalFile)).toBe(true);
+        expect(fs.readFileSync(externalFile, 'utf8')).toBe('PROTECTED_BYTES');
+      }
+    );
+
+    it.runIf(canCreateHardlinks)(
+      '8. pruneOldBackups skips hard-linked candidates (nlink > 1) without deleting shared inode',
+      () => {
+        const backupDir = path.join(tempDir, 'prune-hardlink-dir');
+        fs.mkdirSync(backupDir, { recursive: true });
+
+        // Create 2 valid backups
+        const b1 = path.join(backupDir, 'nexora.sqlite.bak_20261111T000001Z_aaaa1111_pre_v1.sqlite');
+        const b2 = path.join(backupDir, 'nexora.sqlite.bak_20261111T000002Z_bbbb2222_pre_v1.sqlite');
+        fs.writeFileSync(b1, 'B1');
+        fs.writeFileSync(b2, 'B2');
+
+        // Create external file and hard-link matching candidate pattern
+        const externalFile = path.join(tempDir, 'external-shared.sqlite');
+        fs.writeFileSync(externalFile, 'SHARED_BYTES');
+        const hardlinkCandidate = path.join(backupDir, 'nexora.sqlite.bak_20261111T000000Z_dddd4444_pre_v1.sqlite');
+        fs.linkSync(externalFile, hardlinkCandidate);
+
+        const pruneRes = pruneOldBackups(backupDir, 1);
+        expect(pruneRes.unverifiedCount).toBeGreaterThanOrEqual(1);
+        expect(pruneRes.warnings?.some((w) => w.includes('multiple hard links'))).toBe(true);
+
+        // The hard-link candidate and external file are untouched
+        expect(fs.existsSync(hardlinkCandidate)).toBe(true);
+        expect(fs.existsSync(externalFile)).toBe(true);
+        expect(fs.readFileSync(externalFile, 'utf8')).toBe('SHARED_BYTES');
+      }
+    );
+
+    it.runIf(canCreateSymlinks)(
+      '9. MigrationLock rejects lock file that is a symbolic link and does not delete target on release',
+      () => {
+        const lockFile = `${dbPath}.migration.lock`;
+        const externalSecretFile = path.join(tempDir, 'external-lock-secret.txt');
+        fs.writeFileSync(externalSecretFile, 'EXTERNAL_SECRET');
+
+        fs.symlinkSync(externalSecretFile, lockFile);
+
+        const lock = new MigrationLock(dbPath);
+        const inspection = lock.readLockOwner();
+        expect(inspection.status).toBe('MALFORMED');
+        expect(inspection.details).toContain('symbolic link');
+
+        const relResult = lock.release();
+        expect(relResult.status).toBe('NOT_HELD');
+
+        // External target was never deleted or modified
+        expect(fs.existsSync(externalSecretFile)).toBe(true);
+        expect(fs.readFileSync(externalSecretFile, 'utf8')).toBe('EXTERNAL_SECRET');
+      }
+    );
+
+    it.runIf(canCreateSymlinks)(
+      '10. MigrationLock rejects lock directory that is a symbolic link',
+      async () => {
+        const externalDir = path.join(tempDir, 'external-lock-dir');
+        fs.mkdirSync(externalDir, { recursive: true });
+
+        const symlinkDir = path.join(tempDir, 'symlink-db-dir');
+        fs.symlinkSync(externalDir, symlinkDir);
+
+        const dbInSymlinkDir = path.join(symlinkDir, 'nexora.sqlite');
+        const lock = new MigrationLock(dbInSymlinkDir);
+
+        await expect(lock.acquire(300, 50)).rejects.toThrow(MigrationLockError);
+      }
+    );
   });
 });

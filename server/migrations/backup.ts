@@ -17,12 +17,25 @@ export type { BackupResult, PruneResult };
 export function ensureSecureBackupDirectory(backupDir: string): void {
   let dirStat: fs.Stats | null = null;
   try {
-    dirStat = fs.statSync(backupDir);
+    dirStat = fs.lstatSync(backupDir);
   } catch (statErr: any) {
     if (statErr?.code !== 'ENOENT') {
       throw new MigrationBackupError(
         `Failed to inspect backup directory "${backupDir}" (${statErr?.code}): ${statErr?.message}`,
         statErr
+      );
+    }
+  }
+
+  if (dirStat) {
+    if (dirStat.isSymbolicLink()) {
+      throw new MigrationBackupError(
+        `Backup directory "${backupDir}" is a symbolic link. Symbolic-link backup directories are rejected for security.`
+      );
+    }
+    if (!dirStat.isDirectory()) {
+      throw new MigrationBackupError(
+        `Backup directory path "${backupDir}" exists but is not a directory.`
       );
     }
   }
@@ -45,6 +58,12 @@ export function ensureSecureBackupDirectory(backupDir: string): void {
           chmodErr
         );
       }
+      const recheckNewStat = fs.lstatSync(backupDir);
+      if ((recheckNewStat.mode & 0o777) !== 0o700) {
+        throw new MigrationBackupError(
+          `Newly created backup directory "${backupDir}" effective mode (${(recheckNewStat.mode & 0o777).toString(8)}) is not 0700. Operator intervention required.`
+        );
+      }
     }
     return;
   }
@@ -52,69 +71,117 @@ export function ensureSecureBackupDirectory(backupDir: string): void {
   // Directory already exists: on POSIX, inspect effective permissions
   if (process.platform !== 'win32') {
     const currentMode = dirStat.mode & 0o777;
-    // Check if group or others have any permissions (read, write, or execute)
-    if ((currentMode & 0o077) !== 0) {
+    // F-06 Exact Permission Policy: detect owner deficits (0400, 0000, 0500) as well as group/other access
+    if (currentMode !== 0o700) {
       try {
         fs.chmodSync(backupDir, 0o700);
       } catch (chmodErr: any) {
         throw new MigrationBackupError(
-          `Backup directory "${backupDir}" has permissive permissions (${currentMode.toString(8)}) and could not be tightened to 0700 (${chmodErr?.code}): ${chmodErr?.message}. Operator intervention required to secure backup directory.`,
+          `Backup directory "${backupDir}" has invalid permissions (${currentMode.toString(8)}, expected 0700) and could not be tightened to 0700 (${chmodErr?.code}): ${chmodErr?.message}. Operator intervention required to secure backup directory.`,
           chmodErr
         );
       }
 
-      const recheckStat = fs.statSync(backupDir);
-      if ((recheckStat.mode & 0o077) !== 0) {
+      const recheckStat = fs.lstatSync(backupDir);
+      if ((recheckStat.mode & 0o777) !== 0o700) {
         throw new MigrationBackupError(
-          `Backup directory "${backupDir}" remains permissive (${(recheckStat.mode & 0o777).toString(8)}) after tightening. Operator intervention required.`
+          `Backup directory "${backupDir}" remains invalid (${(recheckStat.mode & 0o777).toString(8)}, expected 0700) after tightening. Operator intervention required.`
         );
       }
     }
+  }
 
-    // Tighten pre-existing Nexora backup artifacts to 0600
-    let entries: string[] = [];
-    try {
-      entries = fs.readdirSync(backupDir);
-    } catch (readErr: any) {
-      throw new MigrationBackupError(
-        `Failed to enumerate backup directory "${backupDir}" to verify artifact permissions: ${readErr?.message}`,
-        readErr
-      );
-    }
+  // Inspect pre-existing Nexora backup artifacts on all platforms (path-type, symlink, inode checks)
+  // and tighten to exact 0600 on POSIX platforms
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(backupDir);
+  } catch (readErr: any) {
+    throw new MigrationBackupError(
+      `Failed to enumerate backup directory "${backupDir}" to verify artifact permissions: ${readErr?.message}`,
+      readErr
+    );
+  }
 
-    for (const entry of entries) {
-      // Narrowly scoped strictly to verified Nexora backup artifacts
-      // Never touch unrelated files or collision sentinels
-      if (entry.startsWith('nexora.sqlite.bak_') && entry.endsWith('.sqlite')) {
-        const artifactPath = path.join(backupDir, entry);
-        let artStat: fs.Stats;
-        try {
-          artStat = fs.statSync(artifactPath);
-        } catch (artStatErr: any) {
-          throw new MigrationBackupError(
-            `Failed to stat existing backup artifact "${artifactPath}": ${artStatErr?.message}`,
-            artStatErr
-          );
-        }
+  for (const entry of entries) {
+    // Narrowly scoped strictly to verified Nexora backup artifacts
+    // Never touch unrelated files or collision sentinels
+    if (entry.startsWith('nexora.sqlite.bak_') && entry.endsWith('.sqlite')) {
+      const artifactPath = path.join(backupDir, entry);
+      let artStat: fs.Stats;
+      try {
+        artStat = fs.lstatSync(artifactPath);
+      } catch (artStatErr: any) {
+        throw new MigrationBackupError(
+          `Failed to inspect existing backup artifact "${artifactPath}": ${artStatErr?.message}`,
+          artStatErr
+        );
+      }
 
-        if (!artStat.isFile()) continue;
+      // F-04: Reject symbolic links without following or altering target
+      if (artStat.isSymbolicLink()) {
+        throw new MigrationBackupError(
+          `Existing backup artifact "${artifactPath}" is a symbolic link. Symbolic-link backup artifacts are rejected for security.`
+        );
+      }
 
+      // F-04: Require regular file
+      if (!artStat.isFile()) {
+        throw new MigrationBackupError(
+          `Existing backup artifact "${artifactPath}" is not a regular file.`
+        );
+      }
+
+      // F-04: Hard-link policy: if nlink > 1, multiple links reference this inode.
+      // Refuse to modify shared inode permissions to protect external references.
+      if (artStat.nlink > 1) {
+        throw new MigrationBackupError(
+          `Existing backup candidate "${artifactPath}" has multiple hard links (nlink=${artStat.nlink}). ` +
+          `Refusing to modify shared inode permissions to protect external references. Operator verification required.`
+        );
+      }
+
+      // F-06: Enforce exact 0600 mode on POSIX
+      if (process.platform !== 'win32') {
         const artMode = artStat.mode & 0o777;
-        if ((artMode & 0o077) !== 0) {
+        if (artMode !== 0o600) {
+          // Descriptor-based operation for TOCTOU mitigation
+          let fd: number | null = null;
           try {
-            fs.chmodSync(artifactPath, 0o600);
+            const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+            fd = fs.openSync(artifactPath, openFlags);
+            const fstat = fs.fstatSync(fd);
+            if (fstat.isSymbolicLink() || !fstat.isFile()) {
+              throw new MigrationBackupError(
+                `Descriptor inspection for "${artifactPath}" revealed non-regular or symlink file.`
+              );
+            }
+            if (fstat.nlink > 1) {
+              throw new MigrationBackupError(
+                `Existing backup candidate "${artifactPath}" has multiple hard links on descriptor check (nlink=${fstat.nlink}). Refusing to modify permissions.`
+              );
+            }
+            fs.fchmodSync(fd, 0o600);
+            const recheckFstat = fs.fstatSync(fd);
+            if ((recheckFstat.mode & 0o777) !== 0o600) {
+              throw new MigrationBackupError(
+                `Existing backup artifact "${artifactPath}" remains invalid (${(recheckFstat.mode & 0o777).toString(8)}, expected 0600) after tightening. Operator intervention required.`
+              );
+            }
           } catch (artChmodErr: any) {
+            if (artChmodErr instanceof MigrationBackupError) throw artChmodErr;
             throw new MigrationBackupError(
-              `Failed to secure permissive existing backup artifact "${artifactPath}" (${artChmodErr?.code}): ${artChmodErr?.message}. Operator intervention required.`,
+              `Failed to secure permissions (0600) on existing backup artifact "${artifactPath}" (${artChmodErr?.code}): ${artChmodErr?.message}. Operator intervention required.`,
               artChmodErr
             );
-          }
-
-          const verifiedArtStat = fs.statSync(artifactPath);
-          if ((verifiedArtStat.mode & 0o077) !== 0) {
-            throw new MigrationBackupError(
-              `Existing backup artifact "${artifactPath}" remains permissive (${(verifiedArtStat.mode & 0o777).toString(8)}) after tightening. Operator intervention required.`
-            );
+          } finally {
+            if (fd !== null) {
+              try {
+                fs.closeSync(fd);
+              } catch {
+                // Ignore close error
+              }
+            }
           }
         }
       }
@@ -208,7 +275,7 @@ export async function createWalSafeBackup(
 
     // Initial check: if destination already exists prior to backup, reject immediately
     try {
-      fs.statSync(finalBackupPath);
+      fs.lstatSync(finalBackupPath);
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     } catch (statErr: any) {
       if (statErr instanceof MigrationBackupError) throw statErr;
@@ -245,6 +312,12 @@ export async function createWalSafeBackup(
           chmodErr
         );
       }
+      const sStat = fs.lstatSync(stagingDir);
+      if ((sStat.mode & 0o777) !== 0o700) {
+        throw new MigrationBackupError(
+          `Staging directory "${stagingDir}" effective mode (${(sStat.mode & 0o777).toString(8)}) is not 0700.`
+        );
+      }
     }
 
     // Directory successfully created exclusively by this attempt
@@ -269,6 +342,12 @@ export async function createWalSafeBackup(
         throw new MigrationBackupError(
           `Failed to enforce restrictive mode (0600) on staging file "${stagingFile}": ${chmodErr?.message}`,
           chmodErr
+        );
+      }
+      const sfStat = fs.lstatSync(stagingFile);
+      if ((sfStat.mode & 0o777) !== 0o600) {
+        throw new MigrationBackupError(
+          `Staging file "${stagingFile}" effective mode (${(sfStat.mode & 0o777).toString(8)}) is not 0600.`
         );
       }
     }
@@ -320,7 +399,7 @@ export async function createWalSafeBackup(
     // fs.linkSync creates an atomic directory entry linking directly to the verified staging file.
     // If destination exists, linkSync fails atomically with EEXIST without modifying destination.
     try {
-      fs.statSync(finalBackupPath);
+      fs.lstatSync(finalBackupPath);
       throw new MigrationBackupError(`Backup destination already exists: ${finalBackupPath}`);
     } catch (destStatErr: any) {
       if (destStatErr instanceof MigrationBackupError) throw destStatErr;
@@ -361,11 +440,18 @@ export async function createWalSafeBackup(
     // On POSIX, verify and enforce that published hard link retains restrictive permissions (0600)
     if (process.platform !== 'win32') {
       try {
-        const pubStat = fs.statSync(finalBackupPath);
-        if ((pubStat.mode & 0o077) !== 0) {
+        const pubStat = fs.lstatSync(finalBackupPath);
+        if ((pubStat.mode & 0o777) !== 0o600) {
           fs.chmodSync(finalBackupPath, 0o600);
+          const recheckPub = fs.lstatSync(finalBackupPath);
+          if ((recheckPub.mode & 0o777) !== 0o600) {
+            throw new MigrationBackupError(
+              `Published backup "${finalBackupPath}" effective mode (${(recheckPub.mode & 0o777).toString(8)}) is not 0600.`
+            );
+          }
         }
       } catch (pubChmodErr: any) {
+        if (pubChmodErr instanceof MigrationBackupError) throw pubChmodErr;
         throw new MigrationBackupError(
           `Failed to verify or enforce restrictive mode (0600) on published backup "${finalBackupPath}": ${pubChmodErr?.message}`,
           pubChmodErr
@@ -651,6 +737,28 @@ export function pruneOldBackups(backupDir: string, retainCount = 5): PruneResult
     if (f.startsWith('nexora.sqlite.bak_') && f.endsWith('.sqlite')) {
       const fullPath = path.join(backupDir, f);
       try {
+        const lstat = fs.lstatSync(fullPath);
+        if (lstat.isSymbolicLink()) {
+          unverifiedCount++;
+          warnings.push(
+            `Backup candidate "${fullPath}" is a symbolic link. Symbolic links are not managed by backup pruning.`
+          );
+          continue;
+        }
+        if (!lstat.isFile()) {
+          unverifiedCount++;
+          warnings.push(
+            `Backup candidate "${fullPath}" is not a regular file; skipping pruning.`
+          );
+          continue;
+        }
+        if (lstat.nlink > 1) {
+          unverifiedCount++;
+          warnings.push(
+            `Backup candidate "${fullPath}" has multiple hard links (nlink=${lstat.nlink}); skipping deletion to preserve shared inode.`
+          );
+          continue;
+        }
         const stat = fs.statSync(fullPath);
         validEntries.push({ path: fullPath, mtime: stat.mtimeMs });
       } catch (statErr: any) {
