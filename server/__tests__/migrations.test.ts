@@ -3117,16 +3117,24 @@ describe('Versioned Migration Runner & Core Schema Implementation', () => {
           return origChmod(p, ...(args as [any]));
         });
 
+        const origFchmod = fs.fchmodSync;
+        const fchmodSpy = vi.spyOn(fs, 'fchmodSync').mockImplementation((fd: any, ...args: any[]) => {
+          const err: any = new Error('EPERM: operation not permitted, fchmod');
+          err.code = 'EPERM';
+          throw err;
+        });
+
         try {
           expect(() => ensureSecureBackupDirectory(backupDir)).toThrow(MigrationBackupError);
           try {
             ensureSecureBackupDirectory(backupDir);
           } catch (err: any) {
-            expect(err.message).toContain('Failed to secure permissive existing backup artifact');
+            expect(err.message).toContain('Failed to secure permissions (0600) on existing backup artifact');
             expect(err.message).toContain(backupFilename);
           }
         } finally {
           chmodSpy.mockRestore();
+          fchmodSpy.mockRestore();
         }
       }
     );
